@@ -49,3 +49,11 @@ The foundational display driver is functional.
 * **Protocol:** Serial (UART) communication protocol has been established.
 * **Features:** The driver supports both full-screen refreshes and fast, partial updates.
 * **Next Steps:** The immediate plan is to continue developing the UI logic on an Android emulator on the host computer. The long-term goal is to port this driver to the Rock 3A SoC and migrate the communication protocol from UART to the much faster SPI for production-level performance. Kyle is traveling and doesn't have his SPI/USB connector on him :).
+
+## Development Log
+
+### August 30, 2025
+* Investigated MuditaOS as an alternative to a custom Linux/Android build, as it's a minimal OS puprose built for E Ink displays.
+* Assuming I'm understanding correctly, their docs show MuditaOS is built specifically for the [NXP RT1051](https://github.com/mudita/MuditaOS/blob/master/doc/build_targets.md) microcontroller, which is a different architecture from our Rockchip RK3568. A direct port would require a significant, low-level driver development effort.
+* Considered switching to RT1051 microcontroller, but it's powerful enough to run the required apps (e.g., Spotify, Google Maps). 
+* **Decision:** The best path forward is to stick with the Rock 3A and build our custom UI on top of a minimal Linux or AOSP build. However, switching to the RT1051 and MuditaOS remains an option to consider in the future.
