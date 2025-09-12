@@ -1,7 +1,3 @@
-.DS_Store
-node_modules
-# Android Studio / Gradle
-# ========================
 *.iml
 .gradle
 /local.properties
@@ -16,5 +12,4 @@ node_modules
 /captures
 .externalNativeBuild
 .cxx
-*.apk
-*.aab
+local.properties
