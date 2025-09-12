@@ -4,13 +4,14 @@ This repo contains the prototype display driver and UI dev environment for the K
 This code provides a communication bridge between an Android application running in an emulator and an Inkplate 4 TEMPERA eInk display.
 
 ## Goal
-Create a PoC whereby the Android UI is displayed on the Inkplate at _n_ second intervals. Once established the next step is to update the AOSP directly so that it can render the display on the inkplate when the screen changes (i.e. a button is pressed). 
+PoC whereby the Android UI is displayed on the Inkplate at _n_ second intervals. 
 
 ## Next stage
-Take the finished, working Android application and all of its display logic and deploy it to the final Rock 3A hardware. We will then re-implement the communication bridge using the much faster SPI protocol to achieve a responsive, production-level user experience.
+- Once established the next step is to update the AOSP directly so that it can render the display on the inkplate when the screen changes (i.e. a button is pressed). 
+- Take the finished, Android application and all of its display logic and deploy it to the final Rock 3A hardware. Re-implement the communication bridge using the much faster SPI protocol for responsive, production-level experience.
 
-## How It Works
-The system uses a network proxy bridge to connect the Android emulator to the physical hardware, bypassing the emulator's USB restrictions (doesn't allow ports to be called).
+## How it works
+The system uses a network proxy bridge to connect the Android emulator to the physical hardware, bypassing the emulator's USB restrictions (blocks ports).
 
 * **The Android App (Client):** The KyPhone UI runs as a native app in the Android emulator. A `ScreenCaptureService` captures the live display, processes it for the display, and sends it over a network socket.
 * **`adb reverse` (Port Forwarder):** This standard Android tool forwards the network connection from the emulator's `localhost` to the host machine's `localhost`.
@@ -55,8 +56,8 @@ The system requires three components to be running simultaneously.
 The initial connection in the emulator-to-hardware bridge is functional, but a bug is preventing the goal of continuous updates (every 3 seconds or so).
 
 * **Functionality:** The system successfully captures the first frame from the Android emulator and displays it on the physical Inkplate screen.
-* **Known Bug:** The screen mirroring only updates once when the app is static, because the acquireLatestImage() function only provides a frame when the screen content changes.
-* **Next Steps:** The immediate priority is to debug the data transfer protocol between the Python proxy and the Inkplate firmware to resolve the issue with subsequent frames.
+* **Known Bug:** The screen mirroring only updates once when the app is static. I think it's because the acquireLatestImage() function only provides a frame when the screen content changes. However, even when Android logs showed that images were being transfered to the Inkplate, it very rarely updated more than once. 
+* **Next steps: (Where I need Scott's help)** Debug the data transfer protocol between the Python proxy and the Inkplate firmware to resolve the issue with subsequent frames such that it reliably sends/displays images on the Inkplate either (i) at 5-10s intervals and/or (ii) when the screen is updated (displays somethng else)
 
 ## Appendix: Original Python-Only Demo (Legacy)
 The following documentation describes the initial milestone of the project. This version used a direct Python script-to-hardware connection and does **not** involve Android.
@@ -64,7 +65,7 @@ The following documentation describes the initial milestone of the project. This
 ### How It Worked
 The system used a Client/Server model over a serial (UART) connection:
 * **`image_sender.py` (Client/Host):** A Python script that prepared 600x600 1-bit images and managed the communication protocol. It ran on the host computer.
-* **`inkplate_receiver.ino` (Server/Device):** An Arduino sketch for the Inkplate's onboard ESP32. It listened for commands and used the `drawBitmap` function to render the received image data.
+* **`inkplate_receiver.ino` (Server/Device):** An Arduino sketch for the Inkplate's onboard ESP32. It listened for commands and used the `drawBitmap` function to render the received image data. (Note: A different sketch than inkplate_proxy_receiver.ino)
 
 ### Software Setup
 1.  **Configure the Inkplate**
