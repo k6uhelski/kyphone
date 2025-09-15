@@ -1,45 +1,60 @@
 #include "Inkplate.h"
 
+// Initialize in 1-bit (black and white) color mode.
 Inkplate display(INKPLATE_1BIT);
 
-// Define image constants
-const int IMG_WIDTH = 600;
-const int IMG_HEIGHT = 600;
-const int BUFFER_SIZE = (IMG_WIDTH * IMG_HEIGHT) / 8;
+const int IMAGE_SIZE = 45000;
+byte imageBuffer[IMAGE_SIZE];
 
-// Global buffer to hold the image
-uint8_t imageBuffer[BUFFER_SIZE];
+// A counter to keep track of how many bytes we've received so far.
+int bytesReceived = 0;
 
 void setup() {
   Serial.begin(115200);
-  Serial.setTimeout(10000); // Set a timeout for reading data
   display.begin();
-  
   display.clearDisplay();
-  display.setCursor(10, 10);
-  display.setTextSize(3);
-  display.print("Proxy Ready.");
+
+  display.setCursor(20, 250);
+  display.setTextSize(5);
+  display.print("Ready.");
   display.display();
+  
+  Serial.println("Inkplate is ready.");
 }
 
 void loop() {
-  // Wait for the START and IMG_DATA headers
-  if (Serial.find("START\nIMG_DATA\n")) {
+  // Check if there are any bytes available to read.
+  if (Serial.available() > 0) {
     
-    size_t bytesRead = Serial.readBytes(imageBuffer, BUFFER_SIZE);
-
-    display.clearDisplay();
-    if (bytesRead == BUFFER_SIZE) {
-      // Success: Draw the image
-      display.drawBitmap(0, 0, imageBuffer, IMG_WIDTH, IMG_HEIGHT, BLACK);
-    } else {
-      // Failure: Show an error message
-      display.setCursor(10, 10);
-      display.setTextSize(2);
-      display.print("Data stream error!");
+    // Read all available bytes (up to the remaining buffer space).
+    int bytesToRead = Serial.available();
+    if (bytesToRead > (IMAGE_SIZE - bytesReceived)) {
+      bytesToRead = IMAGE_SIZE - bytesReceived;
     }
-    // This is a slow, blocking call
-    display.display();
+    
+    // Read the incoming bytes into the correct position in our large buffer.
+    Serial.readBytes(imageBuffer + bytesReceived, bytesToRead);
+    bytesReceived += bytesToRead;
+    
+    Serial.print("Received ");
+    Serial.print(bytesReceived);
+    Serial.println(" / 45000 bytes...");
+
+    // Check if we have now received the full image.
+    if (bytesReceived >= IMAGE_SIZE) {
+      Serial.println("Full image received! Drawing now...");
+      
+      display.clearDisplay();
+      
+      // THE FIX IS HERE: Swapped BLACK and WHITE to invert the image
+      display.drawBitmap(0, 0, imageBuffer, 600, 600, WHITE, BLACK);
+      
+      display.display();
+      
+      Serial.println("Screen updated successfully!");
+      
+      // IMPORTANT: Reset the counter to be ready for the next image.
+      bytesReceived = 0;
+    }
   }
 }
-
