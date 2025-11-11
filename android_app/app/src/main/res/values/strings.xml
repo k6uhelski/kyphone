@@ -1,3 +1,4 @@
 <resources>
     <string name="app_name">KyPhone</string>
+    <string name="accessibility_service_description">KyPhone Accessibility Service</string>
 </resources>

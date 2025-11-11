@@ -1,11 +1,14 @@
 package com.example.kyphone
 
+import android.accessibilityservice.AccessibilityService
+import android.accessibilityservice.GestureDescription
 import android.app.*
 import android.content.Context
 import android.content.Intent
 import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.hardware.display.DisplayManager
 import android.hardware.display.VirtualDisplay
@@ -20,6 +23,7 @@ import android.util.DisplayMetrics
 import android.util.Log
 import android.view.Display
 import android.view.WindowManager
+import android.view.accessibility.AccessibilityEvent
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import java.io.BufferedReader
@@ -27,7 +31,8 @@ import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.Socket
 
-class ScreenCaptureService : Service() {
+// ++ CHANGED: We now extend AccessibilityService ++
+class ScreenCaptureService : AccessibilityService() {
 
     private var mediaProjection: MediaProjection? = null
     private var virtualDisplay: VirtualDisplay? = null
@@ -47,11 +52,21 @@ class ScreenCaptureService : Service() {
         }
     }
 
-    override fun onBind(intent: Intent?): IBinder? = null
+    // ++ NEW: Required for AccessibilityService ++
+    override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+        // We don't need to react to events, just perform gestures
+    }
+
+    // ++ NEW: Required for AccessibilityService ++
+    override fun onInterrupt() {
+        // Handle interruption
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         Log.d(tag, "Service starting.")
         startForegroundWithNotification()
+
+        // Handle the screen capture intent from MainActivity
         val resultCode = intent!!.getIntExtra("resultCode", -1)
         val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             intent.getParcelableExtra("data", Intent::class.java)!!
@@ -62,6 +77,7 @@ class ScreenCaptureService : Service() {
         val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
         mediaProjection?.registerCallback(mediaProjectionCallback, Handler(Looper.getMainLooper()))
+
         initializeCommunications()
         return START_NOT_STICKY
     }
@@ -70,12 +86,12 @@ class ScreenCaptureService : Service() {
         scope.launch {
             try {
                 Log.d(tag, "Attempting to connect to proxy...")
-                clientSocket = Socket("127.0.0.1", 65432)
+                clientSocket = Socket("10.0.2.2", 65432)
                 outputStream = clientSocket?.getOutputStream()
                 Log.d(tag, "✅ Connected to proxy.")
 
                 sendMutex.lock()
-                listenForProxyMessages()
+                listenForProxyMessages() // This will now handle taps
                 startScreenCapture()
 
             } catch (e: Exception) {
@@ -100,12 +116,45 @@ class ScreenCaptureService : Service() {
                     Log.d(tag, "Proxy -> App: ACK received.")
                     if (sendMutex.isLocked) sendMutex.unlock()
                 } else {
+                    // ++ THIS IS OUR NEW TAP LOGIC ++
                     Log.d(tag, "Proxy -> App: Received coordinates: $message")
+                    try {
+                        val parts = message.split(',')
+                        if (parts.size == 2) {
+                            val x = parts[0].toFloat()
+                            val y = parts[1].toFloat()
+                            performTap(x, y)
+                        }
+                    } catch (e: Exception) {
+                        Log.e(tag, "Failed to parse coordinates or tap: ${e.message}")
+                    }
                 }
             }
         } catch (e: Exception) {
             Log.e(tag, "Listener error: ${e.message}")
         }
+    }
+
+    // ++ NEW: This function injects a system-wide tap ++
+    private fun performTap(x: Float, y: Float) {
+        Log.d(tag, "App -> System: Injecting tap at ($x, $y)")
+        val path = Path().apply {
+            moveTo(x, y)
+        }
+        val gestureBuilder = GestureDescription.Builder()
+        gestureBuilder.addStroke(GestureDescription.StrokeDescription(path, 0, 1))
+
+        // This is the AccessibilityService function that performs the tap
+        dispatchGesture(gestureBuilder.build(), object : GestureResultCallback() {
+            override fun onCompleted(gestureDescription: GestureDescription?) {
+                super.onCompleted(gestureDescription)
+                Log.d(tag, "Tap gesture completed.")
+            }
+            override fun onCancelled(gestureDescription: GestureDescription?) {
+                super.onCancelled(gestureDescription)
+                Log.d(tag, "Tap gesture cancelled.")
+            }
+        }, null)
     }
 
     private fun startScreenCapture() {
@@ -132,21 +181,17 @@ class ScreenCaptureService : Service() {
             )
             Log.d(tag, "Screen capture started. Waiting for ACK to send.")
 
-            // ++ MODIFIED: The loop now checks the return value of captureAndSend
             while (isActive) {
                 sendMutex.lock()
                 val success = captureAndSend(imageReader!!)
                 if (!success) {
-                    // If we failed to send (e.g., no frame), we must unlock to try again.
                     if (sendMutex.isLocked) sendMutex.unlock()
-                    // Add a small delay to prevent a fast spin-lock
                     delay(100)
                 }
             }
         }
     }
 
-    // ++ MODIFIED: Function now returns a Boolean indicating success
     private fun captureAndSend(reader: ImageReader): Boolean {
         val image = reader.acquireLatestImage()
         var success = false
@@ -171,10 +216,10 @@ class ScreenCaptureService : Service() {
             if (bitmapToSend != null) {
                 val imageData = convertBitmapTo1Bit(bitmapToSend)
                 sendImageOverNetwork(imageData)
-                success = true // Mark as successful
+                success = true
             } else {
                 Log.d(tag, "No frame available to send yet.")
-                success = false // Mark as failed
+                success = false
             }
         } catch (e: Exception) {
             Log.e(tag, "Error during capture and send", e)

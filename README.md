@@ -4,7 +4,15 @@ This repo contains the prototype display driver and UI dev environment for the K
 
 ---
 
-## **Current Status (September 25, 2025\)**
+## **Current Status (November 10, 2025)**
+
+### **Milestone 2: Tap Injection Moved to Android App**
+
+The architecture has been refactored to remove the `adb` dependency. All tap injection logic, which was previously handled by the Python proxy, has been moved into the Android application itself.
+
+* **No More `adb`:** The `proxy.py` script no longer uses `subprocess` to call `adb`. It is now a simple data bridge that forwards image data and coordinate strings.
+* **Accessibility Service:** The `ScreenCaptureService` has been refactored into an `AccessibilityService`.
+* **Live App-Side Taps:** The service now listens for coordinates from the proxy and uses `dispatchGesture()` to inject system-wide taps directly, completing the new control loop (`Inkplate` → `Proxy` → `App` → `Android System`).
 
 ### **Milestone 1: Bidirectional MVP Complete**
 
@@ -24,9 +32,9 @@ The current system uses randomly generated coordinates from the Inkplate. The ne
 
 The system uses a network proxy bridge to connect the Android emulator to the physical hardware.
 
-* **The Android App (Client):** The KyPhone UI runs in the emulator. A `ScreenCaptureService` captures the display and sends it over a network socket.  
-* **`adb reverse` (Port Forwarder):** Forwards the network connection from the emulator to the host machine.  
-* **`proxy.py` (Server/Bridge):** A Python server on the host machine receives image data from the app and sends it to the Inkplate via serial (UART). It also receives coordinates from the Inkplate and injects them into the emulator as taps.  
+* **The Android App (Client):** The KyPhone UI runs in the emulator. An `AccessibilityService` captures the display, sends it over a network socket (to `127.0.0.1`), and listens on the same socket for incoming touch coordinates. When coordinates are received, it injects them as system-wide taps.
+* **`adb reverse` (Port Forwarder):** Forwards the network connection from the emulator's `127.0.0.1` to the host machine's `127.0.0.1`.
+* **`proxy.py` (Server/Bridge):** A Python server on the host machine (listening on `127.0.0.1`) receives image data from the app and sends it to the Inkplate via serial (UART). It also receives coordinates from the Inkplate and forwards them to the app.
 * **`inkplate_touch_simulator.ino` (Device Firmware):** An Arduino sketch on the Inkplate listens for serial data, renders the image, and sends mock touch coordinates back.
 
 ---
@@ -56,11 +64,19 @@ Bash
 ### **3\. Run the App (Android Studio)**
 
 * Open the KyPhone project, start the emulator, and run the app.  
+* One-Time Setup: Go to Settings > Accessibility > KyPhone and enable the "Use KyPhone" toggle. You must grant the permission for the service to inject taps.
 * Tap "Start Screen Mirroring" and grant screen capture permission.
 
 ---
 
 ## **Development Log**
+
+### **November 10, 2025: Milestone 2 - Tap Injection Refactored to Android**
+
+Successfully refactored the architecture to move all tap injection logic from the Python proxy into the Android app. This removes the `adb` dependency and is a major step toward the final on-device software.
+
+* **Proxy Server:** Removed `adb` and `subprocess` logic. The proxy is now a simple, fast data bridge.
+* **Android App:** Refactored `ScreenCaptureService` into an `AccessibilityService`. The service now manages the socket connection (sending images and receiving coordinates) and uses `dispatchGesture()` to inject system-wide taps.
 
 ### **September 25, 2025: Bidirectional MVP Stabilized**
 

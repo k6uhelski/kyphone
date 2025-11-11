@@ -1,20 +1,18 @@
 import socket
 import serial
 import select
-import subprocess
 
 # --- CONFIGURATION ---
-SERIAL_PORT = '/dev/cu.usbserial-120'
+SERIAL_PORT = '/dev/cu.usbserial-1140'
 BAUD_RATE = 115200
 HOST = '127.0.0.1'
 PORT = 65432
 IMAGE_SIZE = 45000
-# ++ IMPORTANT: Update this with the correct full path to your adb executable
-ADB_PATH = '/Users/kyleuhelski/Library/Android/sdk/platform-tools/adb'
 # ---------------------
 
-print("--- KyPhone Final Proxy (With ADB Tap Injection) ---")
+print("--- KyPhone Final Proxy (ADB Logic Removed) ---")
 
+# ++ THIS IS THE CORRECTED LINE ++
 server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 server_socket.setblocking(False)
 server_socket.bind((HOST, PORT))
@@ -54,22 +52,15 @@ try:
                         if client_socket:
                             client_socket.sendall(b'ACK\n')
                     else:
-                        print(f"Inkplate -> App & ADB: {line}")
+                        # ++ MODIFIED BLOCK ++
+                        # We just print and forward. No more subprocess.
+                        print(f"Inkplate -> App: {line}")
                         
-                        # ++ MODIFIED: ADB Tap Injection Logic with full path
-                        try:
-                            x, y = line.split(',')
-                            subprocess.run([ADB_PATH, 'shell', 'input', 'tap', x, y], check=True)
-                        except ValueError:
-                            print("⚠️ Received non-coordinate data from Inkplate.")
-                        except FileNotFoundError:
-                            print(f"⚠️ ADB command failed: The path '{ADB_PATH}' is incorrect. Please update the ADB_PATH variable.")
-                        except Exception as e:
-                            print(f"⚠️ ADB command failed: {e}")
-
-                        # Forward to app for logging
+                        # This line is now the primary action.
+                        # It sends the coordinates to the Android app.
                         if client_socket:
                            client_socket.sendall(line.encode('utf-8') + b'\n')
+                        # -- END OF MODIFIED BLOCK --
 
             elif s is client_socket:
                 if not inkplate_ready_for_image:
@@ -98,4 +89,3 @@ finally:
     server_socket.close()
     inkplate_serial.close()
     print("Connections closed.")
-
