@@ -86,6 +86,7 @@ class ScreenCaptureService : AccessibilityService() {
         scope.launch {
             try {
                 Log.d(tag, "Attempting to connect to proxy...")
+                // Connect to the host machine (10.0.2.2)
                 clientSocket = Socket("10.0.2.2", 65432)
                 outputStream = clientSocket?.getOutputStream()
                 Log.d(tag, "✅ Connected to proxy.")
@@ -101,6 +102,7 @@ class ScreenCaptureService : AccessibilityService() {
         }
     }
 
+    // --- THIS IS THE UPDATED FUNCTION ---
     private fun listenForProxyMessages() = scope.launch {
         Log.d(tag, "Proxy message listener started.")
         try {
@@ -112,28 +114,40 @@ class ScreenCaptureService : AccessibilityService() {
                     break
                 }
 
-                if (message == "ACK") {
-                    Log.d(tag, "Proxy -> App: ACK received.")
-                    if (sendMutex.isLocked) sendMutex.unlock()
-                } else {
-                    // ++ THIS IS OUR NEW TAP LOGIC ++
+                // Check for different message types
+                if (message.startsWith("TAP:")) {
                     Log.d(tag, "Proxy -> App: Received coordinates: $message")
+                    // Remove the "TAP:" prefix to get just "235,278"
+                    val coordsOnly = message.removePrefix("TAP:")
+
                     try {
-                        val parts = message.split(',')
+                        val parts = coordsOnly.split(',')
                         if (parts.size == 2) {
                             val x = parts[0].toFloat()
                             val y = parts[1].toFloat()
-                            performTap(x, y)
+                            performTap(x, y) // This will now work!
                         }
                     } catch (e: Exception) {
-                        Log.e(tag, "Failed to parse coordinates or tap: ${e.message}")
+                        Log.e(tag, "Failed to parse TAP coordinates: ${e.message}")
                     }
+
+                } else if (message.startsWith("REL:")) {
+                    Log.d(tag, "Proxy -> App: Received release: $message")
+                    // We don't need to do anything for release, but it's good to log.
+
+                } else if (message == "ACK") {
+                    Log.d(tag, "Proxy -> App: ACK received.")
+                    if (sendMutex.isLocked) sendMutex.unlock()
+
+                } else {
+                    Log.w(tag, "Received unknown proxy message: $message")
                 }
             }
         } catch (e: Exception) {
             Log.e(tag, "Listener error: ${e.message}")
         }
     }
+    // --- END OF UPDATED FUNCTION ---
 
     // ++ NEW: This function injects a system-wide tap ++
     private fun performTap(x: Float, y: Float) {

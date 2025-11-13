@@ -3,7 +3,7 @@ import serial
 import select
 
 # --- CONFIGURATION ---
-SERIAL_PORT = '/dev/cu.usbserial-1140'
+SERIAL_PORT = '/dev/cu.usbserial-130'
 BAUD_RATE = 115200
 HOST = '127.0.0.1'
 PORT = 65432

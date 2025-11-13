@@ -4,7 +4,27 @@ This repo contains the prototype display driver and UI dev environment for the K
 
 ---
 
-## **Current Status (November 10, 2025)**
+## **Current Status (November 12, 2025)**
+
+### **Next Milestone: Synchronized On-Demand Refresh**
+
+The current system constantly refreshes the e-ink screen every few seconds, even if the Android UI is static. This is inefficient and creates a poor user experience. Our next goal is to make the e-ink display a true **synchronized mirror** of the Android UI, updating *only* when the UI *actually* changes.
+
+* **Change Detection:** The Android app will be updated to compare the current frame to the last-sent frame. If they are identical, no data will be sent.
+* **Differential Updates:** When a change *is* detected, the app will calculate a "diff" (the difference) and send *only* the changed pixels.
+* **Partial Refresh:** The Inkplate firmware will be updated to receive these partial "diff" commands and draw them directly, allowing for fast, flash-free updates for small UI changes.
+
+---
+
+### **(Previous Milestones)**
+
+### **Milestone 3: Live Touchscreen Integration Complete**
+
+The goal of a stable, live-touch bidirectional link is complete. The system now reliably mirrors the Android screen to the hardware and forwards **real** user taps from the Inkplate's touchscreen controller back to the emulator to trigger live taps.
+
+* **Live Touch:** The Inkplate firmware is now non-blocking and sends real `TAP:X,Y` coordinates from the touchscreen controller.
+* **App-Side Parsing:** The Android `AccessibilityService` correctly parses the `TAP:X,Y` protocol and injects live tap events.
+* **`adb`-Free:** The `adb reverse` dependency has been eliminated by updating the app to connect directly to the host IP (`10.0.2.2`).
 
 ### **Milestone 2: Tap Injection Moved to Android App**
 
@@ -18,13 +38,9 @@ The architecture has been refactored to remove the `adb` dependency. All tap inj
 
 The initial goal of a stable, bidirectional link is complete. The system now reliably mirrors the Android screen to the hardware and forwards mock touch events from the hardware back to the emulator to trigger live taps.
 
-* **Reliable, Timed Updates:** The full pipeline (App → Proxy → Inkplate) works reliably.  
-* **Bidirectional Communication:** The Inkplate sends mock coordinates back to the proxy.  
-* **Live Touch Interaction:** The proxy uses `adb` to inject the received coordinates as tap events into the Android emulator, creating a live demo loop.  
-
-### **Next Milestone: Live Touchscreen Integration**
-
-The current system uses randomly generated coordinates from the Inkplate. The next milestone is to integrate the Inkplate's actual touchscreen controller to send real user input to the Android app.
+* **Reliable, Timed Updates:** The full pipeline (App → Proxy → Inkplate) works reliably.
+* **Bidirectional Communication:** The Inkplate sends mock coordinates back to the proxy.
+* **Live Touch Interaction:** The proxy uses `adb` to inject the received coordinates as tap events into the Android emulator, creating a live demo loop.
 
 ---
 
@@ -70,6 +86,13 @@ Bash
 ---
 
 ## **Development Log**
+
+### **November 12, 2025: Milestone 3 - Live Touchscreen Integration**
+
+Successfully integrated the Inkplate's real touchscreen controller, completing the emulator-to-hardware loop. Replaced the mock coordinate system with a robust, non-blocking hardware loop.
+
+* **Firmware:** Upgraded `inkplate_touch_simulator.ino` to be fully non-blocking. It now handles simultaneous image receiving and touch polling, capturing all tap events without dropping input.
+* **Android App:** Updated `ScreenCaptureService.kt` to parse the new `TAP:X,Y` string protocol, removing the parsing crash.
 
 ### **November 10, 2025: Milestone 2 - Tap Injection Refactored to Android**
 
