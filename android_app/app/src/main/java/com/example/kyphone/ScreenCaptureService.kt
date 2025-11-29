@@ -5,7 +5,8 @@ import android.accessibilityservice.GestureDescription
 import android.app.*
 import android.content.Context
 import android.content.Intent
-import android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION
+// --- THIS IS THE FIX ---
+import android.content.pm.ServiceInfo
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Path
@@ -31,7 +32,6 @@ import java.io.InputStreamReader
 import java.io.OutputStream
 import java.net.Socket
 
-// ++ CHANGED: We now extend AccessibilityService ++
 class ScreenCaptureService : AccessibilityService() {
 
     private var mediaProjection: MediaProjection? = null
@@ -41,8 +41,14 @@ class ScreenCaptureService : AccessibilityService() {
     private val tag = "CaptureService"
     private var clientSocket: Socket? = null
     private var outputStream: OutputStream? = null
+
     private val sendMutex = Mutex()
-    private var lastSuccessfulBitmap: Bitmap? = null
+    private var isFirstAckReceived = false
+
+    private var lastSentBitmap: Bitmap? = null
+    private var isCaptureInitialized = false
+
+    private var currentGesturePath: Path? = null
 
     private val mediaProjectionCallback = object : MediaProjection.Callback() {
         override fun onStop() {
@@ -52,12 +58,10 @@ class ScreenCaptureService : AccessibilityService() {
         }
     }
 
-    // ++ NEW: Required for AccessibilityService ++
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         // We don't need to react to events, just perform gestures
     }
 
-    // ++ NEW: Required for AccessibilityService ++
     override fun onInterrupt() {
         // Handle interruption
     }
@@ -66,19 +70,38 @@ class ScreenCaptureService : AccessibilityService() {
         Log.d(tag, "Service starting.")
         startForegroundWithNotification()
 
-        // Handle the screen capture intent from MainActivity
-        val resultCode = intent!!.getIntExtra("resultCode", -1)
-        val data = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-            intent.getParcelableExtra("data", Intent::class.java)!!
+        if (intent == null) {
+            Log.w(tag, "onStartCommand received null intent (likely system restart).")
+            return START_NOT_STICKY
+        }
+
+        val resultCode = intent.getIntExtra("resultCode", Activity.RESULT_CANCELED)
+        val data: Intent? = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            intent.getParcelableExtra("data", Intent::class.java)
         } else {
             @Suppress("DEPRECATION")
-            intent.getParcelableExtra("data")!!
+            intent.getParcelableExtra("data")
         }
-        val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
-        mediaProjection?.registerCallback(mediaProjectionCallback, Handler(Looper.getMainLooper()))
 
-        initializeCommunications()
+        if (resultCode == Activity.RESULT_OK && data != null) {
+
+            if (isCaptureInitialized) {
+                Log.d(tag, "Capture already initialized. Ignoring new permission intent.")
+                return START_NOT_STICKY
+            }
+
+            Log.d(tag, "Got permission extras. Initializing media projection.")
+            isCaptureInitialized = true
+
+            val mediaProjectionManager = getSystemService(Context.MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            mediaProjection = mediaProjectionManager.getMediaProjection(resultCode, data)
+            mediaProjection?.registerCallback(mediaProjectionCallback, Handler(Looper.getMainLooper()))
+
+            initializeCommunications()
+        } else {
+            Log.d(tag, "onStartCommand called without permission extras (system re-bind?). Ignoring.")
+        }
+
         return START_NOT_STICKY
     }
 
@@ -86,14 +109,11 @@ class ScreenCaptureService : AccessibilityService() {
         scope.launch {
             try {
                 Log.d(tag, "Attempting to connect to proxy...")
-                // Connect to the host machine (10.0.2.2)
                 clientSocket = Socket("10.0.2.2", 65432)
                 outputStream = clientSocket?.getOutputStream()
                 Log.d(tag, "✅ Connected to proxy.")
 
-                sendMutex.lock()
-                listenForProxyMessages() // This will now handle taps
-                startScreenCapture()
+                listenForProxyMessages()
 
             } catch (e: Exception) {
                 Log.e(tag, "Connection failed: ${e.message}")
@@ -102,7 +122,6 @@ class ScreenCaptureService : AccessibilityService() {
         }
     }
 
-    // --- THIS IS THE UPDATED FUNCTION ---
     private fun listenForProxyMessages() = scope.launch {
         Log.d(tag, "Proxy message listener started.")
         try {
@@ -114,59 +133,81 @@ class ScreenCaptureService : AccessibilityService() {
                     break
                 }
 
-                // Check for different message types
-                if (message.startsWith("TAP:")) {
-                    Log.d(tag, "Proxy -> App: Received coordinates: $message")
-                    // Remove the "TAP:" prefix to get just "235,278"
-                    val coordsOnly = message.removePrefix("TAP:")
-
-                    try {
-                        val parts = coordsOnly.split(',')
-                        if (parts.size == 2) {
-                            val x = parts[0].toFloat()
-                            val y = parts[1].toFloat()
-                            performTap(x, y) // This will now work!
-                        }
-                    } catch (e: Exception) {
-                        Log.e(tag, "Failed to parse TAP coordinates: ${e.message}")
+                if (message == "ACK") {
+                    Log.d(tag, "Proxy -> App: ACK received.")
+                    if (sendMutex.isLocked) {
+                        sendMutex.unlock()
                     }
 
-                } else if (message.startsWith("REL:")) {
-                    Log.d(tag, "Proxy -> App: Received release: $message")
-                    // We don't need to do anything for release, but it's good to log.
+                    if (!isFirstAckReceived) {
+                        isFirstAckReceived = true
+                        Log.d(tag, "First ACK received, starting capture loop.")
+                        startScreenCapture()
+                    }
+                    continue
+                }
 
-                } else if (message == "ACK") {
-                    Log.d(tag, "Proxy -> App: ACK received.")
-                    if (sendMutex.isLocked) sendMutex.unlock()
+                try {
+                    val parts = message.split(':')
+                    if (parts.size < 2) continue
 
-                } else {
-                    Log.w(tag, "Received unknown proxy message: $message")
+                    val command = parts[0]
+                    val coords = parts[1].split(',')
+                    if (coords.size < 2) continue
+
+                    val x = coords[0].toFloat()
+                    val y = coords[1].toFloat()
+
+                    when (command) {
+                        "DOWN" -> {
+                            Log.d(tag, "Gesture DOWN at ($x, $y)")
+                            currentGesturePath = Path().apply {
+                                moveTo(x, y)
+                            }
+                        }
+                        "DRAG" -> {
+                            Log.d(tag, "Gesture DRAG to ($x, $y)")
+                            currentGesturePath?.lineTo(x, y)
+                        }
+                        "UP" -> {
+                            Log.d(tag, "Gesture UP")
+                            currentGesturePath?.let {
+                                if (it.isEmpty) {
+                                    it.moveTo(x, y)
+                                }
+                                val duration = if (it.isEmpty) 1L else 200L
+                                performGesture(it, duration)
+                            }
+                            currentGesturePath = null
+                        }
+                        else -> {
+                            Log.w(tag, "Received unknown proxy message: $message")
+                        }
+                    }
+
+                } catch (e: Exception) {
+                    Log.e(tag, "Failed to parse command: $message, Error: ${e.message}")
                 }
             }
         } catch (e: Exception) {
             Log.e(tag, "Listener error: ${e.message}")
         }
     }
-    // --- END OF UPDATED FUNCTION ---
 
-    // ++ NEW: This function injects a system-wide tap ++
-    private fun performTap(x: Float, y: Float) {
-        Log.d(tag, "App -> System: Injecting tap at ($x, $y)")
-        val path = Path().apply {
-            moveTo(x, y)
-        }
+    private fun performGesture(path: Path, duration: Long) {
+        Log.d(tag, "App -> System: Injecting gesture with duration $duration ms")
+
         val gestureBuilder = GestureDescription.Builder()
-        gestureBuilder.addStroke(GestureDescription.StrokeDescription(path, 0, 1))
+        gestureBuilder.addStroke(GestureDescription.StrokeDescription(path, 0, duration))
 
-        // This is the AccessibilityService function that performs the tap
         dispatchGesture(gestureBuilder.build(), object : GestureResultCallback() {
             override fun onCompleted(gestureDescription: GestureDescription?) {
                 super.onCompleted(gestureDescription)
-                Log.d(tag, "Tap gesture completed.")
+                Log.d(tag, "Gesture completed.")
             }
             override fun onCancelled(gestureDescription: GestureDescription?) {
                 super.onCancelled(gestureDescription)
-                Log.d(tag, "Tap gesture cancelled.")
+                Log.d(tag, "Gesture cancelled.")
             }
         }, null)
     }
@@ -206,11 +247,12 @@ class ScreenCaptureService : AccessibilityService() {
         }
     }
 
-    private fun captureAndSend(reader: ImageReader): Boolean {
+    private suspend fun captureAndSend(reader: ImageReader): Boolean {
         val image = reader.acquireLatestImage()
         var success = false
+        var bitmapToSend: Bitmap? = null
+
         try {
-            var bitmapToSend: Bitmap? = null
             if (image != null) {
                 Log.d(tag, "New frame captured.")
                 val planes = image.planes
@@ -220,23 +262,36 @@ class ScreenCaptureService : AccessibilityService() {
                 val rowPadding = rowStride - pixelStride * image.width
                 val rawBitmap = Bitmap.createBitmap(image.width + rowPadding / pixelStride, image.height, Bitmap.Config.ARGB_8888)
                 rawBitmap.copyPixelsFromBuffer(buffer)
-                lastSuccessfulBitmap = processBitmap(rawBitmap)
-                bitmapToSend = lastSuccessfulBitmap
-            } else if (lastSuccessfulBitmap != null) {
-                Log.d(tag, "No new frame, re-sending last successful frame.")
-                bitmapToSend = lastSuccessfulBitmap
+
+                bitmapToSend = processBitmap(rawBitmap)
             }
 
             if (bitmapToSend != null) {
-                val imageData = convertBitmapTo1Bit(bitmapToSend)
-                sendImageOverNetwork(imageData)
-                success = true
+                val isFirstFrame = lastSentBitmap == null
+                val areBitmapsDifferent = lastSentBitmap?.sameAs(bitmapToSend) == false
+
+                if (isFirstFrame || areBitmapsDifferent) {
+                    val imageData = convertBitmapTo1Bit(bitmapToSend)
+                    sendImageOverNetwork(imageData)
+
+                    lastSentBitmap = bitmapToSend.copy(bitmapToSend.config, false)
+                    success = true
+                    Log.d(tag, "Change detected. Sending new frame.")
+
+                } else {
+                    Log.d(tag, "No change detected, skipping send.")
+                    if (sendMutex.isLocked) sendMutex.unlock()
+                    success = true
+                }
+
             } else {
                 Log.d(tag, "No frame available to send yet.")
+                if (sendMutex.isLocked) sendMutex.unlock()
                 success = false
             }
         } catch (e: Exception) {
             Log.e(tag, "Error during capture and send", e)
+            if (sendMutex.isLocked) sendMutex.unlock()
             success = false
         } finally {
             image?.close()
@@ -254,6 +309,7 @@ class ScreenCaptureService : AccessibilityService() {
                 }
             } catch (e: Exception) {
                 Log.e(tag, "Image send error: ${e.message}")
+                if (sendMutex.isLocked) sendMutex.unlock()
             }
         }
     }
@@ -265,7 +321,8 @@ class ScreenCaptureService : AccessibilityService() {
         mediaProjection?.unregisterCallback(mediaProjectionCallback)
         mediaProjection?.stop()
         clientSocket?.close()
-        lastSuccessfulBitmap = null
+        lastSentBitmap = null
+        isCaptureInitialized = false
         stopForeground(true)
         stopSelf()
         Log.d(tag, "Screen capture resources released.")
@@ -274,14 +331,24 @@ class ScreenCaptureService : AccessibilityService() {
     private fun processBitmap(bitmap: Bitmap): Bitmap {
         val originalWidth = bitmap.width
         val originalHeight = bitmap.height
-        val cropSize = if (originalWidth < originalHeight) originalWidth else originalHeight
+
+        val statusBarOffset = 100
+
+        if (originalHeight <= statusBarOffset) {
+            Log.w(tag, "Bitmap height is smaller than status bar offset, scaling full image.")
+            return Bitmap.createScaledBitmap(bitmap, 600, 600, true)
+        }
+
+        val heightAfterCrop = originalHeight - statusBarOffset
+        val cropSize = if (originalWidth < heightAfterCrop) originalWidth else heightAfterCrop
         val cropX = (originalWidth - cropSize) / 2
-        val cropY = (originalHeight - cropSize) / 2
+        val cropY = statusBarOffset + ((heightAfterCrop - cropSize) / 2)
+
         val croppedBitmap = Bitmap.createBitmap(bitmap, cropX, cropY, cropSize, cropSize)
         return Bitmap.createScaledBitmap(croppedBitmap, 600, 600, true)
     }
 
-    private fun convertBitmapTo1Bit(bitmap: Bitmap): ByteArray {
+    private suspend fun convertBitmapTo1Bit(bitmap: Bitmap): ByteArray = withContext(Dispatchers.Default) {
         val width = bitmap.width
         val height = bitmap.height
         val buffer = ByteArray((width * height) / 8)
@@ -299,7 +366,7 @@ class ScreenCaptureService : AccessibilityService() {
         for (i in buffer.indices) {
             buffer[i] = buffer[i].toInt().inv().toByte()
         }
-        return buffer
+        buffer
     }
 
     private fun startForegroundWithNotification() {
@@ -323,8 +390,9 @@ class ScreenCaptureService : AccessibilityService() {
                 .build()
         }
 
+        // --- THIS IS THE FIX ---
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            startForeground(1, notification, FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
+            startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PROJECTION)
         } else {
             startForeground(1, notification)
         }

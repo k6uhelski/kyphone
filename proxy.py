@@ -8,7 +8,7 @@ BAUD_RATE = 115200
 HOST = '127.0.0.1'
 PORT = 65432
 IMAGE_SIZE = 45000
-# ---------------------
+# --------------------
 
 print("--- KyPhone Final Proxy (ADB Logic Removed) ---")
 

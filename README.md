@@ -4,19 +4,34 @@ This repo contains the prototype display driver and UI dev environment for the K
 
 ---
 
-## **Current Status (November 12, 2025)**
+## **Current Status (November 28, 2025)**
 
-### **Next Milestone: Synchronized On-Demand Refresh**
+We have achieved the first phase of synchronized mirroring by preventing redundant updates and implementing full touch controls.
+
+* **Change Detection:** The Android app now compares the current frame to the last-sent frame. If they are identical, no data is sent to the hardware.
+* **Full Gesture Support:** The touch protocol now supports full gesture events (`DOWN`, `DRAG`, `UP`) instead of simple taps. This allows users to swipe, scroll, and drag items on the Android emulator using the physical e-ink touchscreen.
+* **Simplified Architecture:** The Python proxy script no longer processes data or uses external tools. It simply forwards data between the Android App and the Inkplate firmware.
+
+### **Next Milestone: Performance & Calibration**
+
+Now that the system is functional, we need to refine the user experience and optimize data transfer.
+
+* **Touch Calibration:** The current touch inputs are inaccurate, meaning a physical tap often registers in the wrong location on the Android screen. We need to fix the coordinate mapping to ensure physical touches align perfectly with the digital UI.
+* **Display Scaling:** The Android interface does not currently fit the Inkplate screen dimensions correctly. We need to adjust the image resizing logic to ensure the UI is scaled and centered properly without distortion.
+* **Differential Updates:** When a change is detected, the app will calculate a "diff" (the difference) and send *only* the changed pixels.
+* **Partial Refresh:** The Inkplate firmware will be updated to receive these partial "diff" commands and draw them directly, allowing for fast, flash-free updates for small UI changes.
+
+---
+
+### **(Previous Milestones)**
+
+### **Milestone 4: Conditional Screen Updates & Full Gestures**
 
 The current system constantly refreshes the e-ink screen every few seconds, even if the Android UI is static. This is inefficient and creates a poor user experience. Our next goal is to make the e-ink display a true **synchronized mirror** of the Android UI, updating *only* when the UI *actually* changes.
 
 * **Change Detection:** The Android app will be updated to compare the current frame to the last-sent frame. If they are identical, no data will be sent.
 * **Differential Updates:** When a change *is* detected, the app will calculate a "diff" (the difference) and send *only* the changed pixels.
 * **Partial Refresh:** The Inkplate firmware will be updated to receive these partial "diff" commands and draw them directly, allowing for fast, flash-free updates for small UI changes.
-
----
-
-### **(Previous Milestones)**
 
 ### **Milestone 3: Live Touchscreen Integration Complete**
 
@@ -48,10 +63,12 @@ The initial goal of a stable, bidirectional link is complete. The system now rel
 
 The system uses a network proxy bridge to connect the Android emulator to the physical hardware.
 
-* **The Android App (Client):** The KyPhone UI runs in the emulator. An `AccessibilityService` captures the display, sends it over a network socket (to `127.0.0.1`), and listens on the same socket for incoming touch coordinates. When coordinates are received, it injects them as system-wide taps.
-* **`adb reverse` (Port Forwarder):** Forwards the network connection from the emulator's `127.0.0.1` to the host machine's `127.0.0.1`.
-* **`proxy.py` (Server/Bridge):** A Python server on the host machine (listening on `127.0.0.1`) receives image data from the app and sends it to the Inkplate via serial (UART). It also receives coordinates from the Inkplate and forwards them to the app.
-* **`inkplate_touch_simulator.ino` (Device Firmware):** An Arduino sketch on the Inkplate listens for serial data, renders the image, and sends mock touch coordinates back.
+* **The Android App (Client):** The KyPhone UI runs in the emulator. An `AccessibilityService` performs three tasks:
+    1.  **Change Detection:** Captures the display and compares pixels to the previous frame.
+    2.  **Transmission:** Sends image data to the Host IP (`10.0.2.2`) only if changes are detected.
+    3.  **Input:** Listens for `DOWN`, `DRAG`, and `UP` commands and injects them as system gestures.
+* **`proxy.py` (Server/Bridge):** A Python script running on the host computer. It accepts a TCP connection from the Emulator and a Serial connection from the Inkplate, forwarding data between them.
+* **`inkplate_touch_simulator.ino` (Device Firmware):** An Arduino sketch running on the Inkplate. It renders received images to the screen and reads touch input, sending coordinate data over the USB Serial connection.
 
 ---
 
