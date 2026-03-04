@@ -1,5 +1,5 @@
 #include <Inkplate.h>
-#include <driver/spi_slave.h>
+#include <driver/spi_slave.h> // ESP32 core library uses this naming, but we treat it as Peripheral
 
 Inkplate display(INKPLATE_1BIT); 
 char receive_buffer[33]; 
@@ -11,7 +11,7 @@ void setup() {
     display.clearDisplay();
     display.display(); 
 
-    // Using your EXISTING pinout
+    // Using your EXISTING pinout (Peripheral Side)
     spi_bus_config_t bus_config = {
         .mosi_io_num = 13, 
         .miso_io_num = -1, // DISCONNECT PHYSICAL PIN 12
@@ -20,15 +20,16 @@ void setup() {
         .quadhd_io_num = -1,
     };
 
-    spi_slave_interface_config_t slave_config = {
+    spi_slave_interface_config_t peripheral_config = {
         .spics_io_num = 22, 
         .flags = 0,
         .queue_size = 3,
         .mode = 0,
     };
 
-    spi_slave_initialize(HSPI_HOST, &bus_config, &slave_config, GPIO_INTR_DISABLED);
-    Serial.println("SYSTEM READY: POLLING SPI (PINS 13, 14, 22)");
+    // Note: HSPI_HOST and spi_slave_initialize are part of the ESP32 driver naming
+    spi_slave_initialize(HSPI_HOST, &bus_config, &peripheral_config, GPIO_INTR_DISABLED);
+    Serial.println("SYSTEM READY: POLLING SPI PERIPHERAL (PINS 13, 14, 22)");
 }
 
 void loop() {
@@ -39,7 +40,7 @@ void loop() {
     t.length = 32 * 8; 
     t.rx_buffer = receive_buffer;
 
-    // Use a very short timeout (50ms) so we don't hang if Radxa isn't sending
+    // Use a very short timeout (50ms) so we don't hang if Controller isn't sending
     esp_err_t ret = spi_slave_transmit(HSPI_HOST, &t, 50 / portTICK_PERIOD_MS);
 
     if (ret == ESP_OK && receive_buffer[0] == 0x02) { 
@@ -59,5 +60,4 @@ void loop() {
             display.partialUpdate(); 
         }
     }
-    // No "else" print here to keep the Serial monitor clean during polling
 }

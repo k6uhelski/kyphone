@@ -2,7 +2,7 @@ import spidev
 import time
 import sys
 
-# Initialize SPI on Bus 0, CS 0
+# Initialize SPI on Bus 0, CS 0 (Controller Side)
 spi = spidev.SpiDev()
 try:
     spi.open(0, 0)
@@ -26,7 +26,7 @@ def send_message(text):
     print("Done.")
 
 try:
-    print("--- Radxa SPI Master (No-Handshake Mode) ---")
+    print("--- Radxa SPI Controller (No-Handshake Mode) ---")
     print("Wire Check: MOSI=13, SCLK=14, CS=22. UNPLUG PIN 12.")
     while True:
         msg = input("KyPhone> ")

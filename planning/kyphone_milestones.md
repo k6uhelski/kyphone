@@ -2,7 +2,7 @@
 *Created: March 3, 2026*
 
 ## Milestone 1: Stable Hardware Bridge (Current Goal)
-Successful bidirectional SPI communication between Radxa and Inkplate with no hardware lockups. String rendering and status reporting work reliably.
+Successful bidirectional SPI communication between Radxa (Controller) and Inkplate (Peripheral) with no hardware lockups. String rendering and status reporting work reliably.
 
 ## Milestone 2: High-Performance Screen Driver
 Achievement of high-speed screen updates (~2-5 FPS) using differential pixel diffing and partial e-ink refreshes. Touch calibration completed for 1:1 interaction.

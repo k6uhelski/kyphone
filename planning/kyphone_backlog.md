@@ -2,7 +2,7 @@
 *Created: March 3, 2026*
 
 ## Phase 1: Hardware Bridge (Current Focus)
-- [ ] **Verify SPI communication** between Radxa and Inkplate (No-Handshake Mode).
+- [ ] **Verify SPI communication** between Radxa (Controller) and Inkplate (Peripheral).
 - [ ] **Implement Hardware Handshake** (RTS Pin) if polling fails or hangs.
 - [ ] **Resolve GPIO conflicts** with Touch Controller/SD Card on Pins 13/14.
 - [ ] **Stabilize Power**: Ensure common ground and clean power delivery to both boards.
