@@ -23,6 +23,7 @@ node_modules
 .gemini/
 kyphone_state.md
 kyphone_journal.md
+kyphone_context.md
 __pycache__/
 *.log
 .env
