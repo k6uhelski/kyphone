@@ -18,3 +18,12 @@ node_modules
 .cxx
 *.apk
 *.aab
+
+# Local and Agent Files
+.gemini/
+kyphone_state.md
+kyphone_journal.md
+__pycache__/
+*.log
+.env
+*.tmp
