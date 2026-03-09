@@ -2,12 +2,12 @@ import spidev
 import time
 import sys
 
-# Initialize SPI on Bus 0, CS 0 (Controller Side)
+# Initialize SPI on Bus 3, CS 0 (Controller Side)
 spi = spidev.SpiDev()
 try:
-    spi.open(0, 0)
+    spi.open(3, 0)
 except FileNotFoundError:
-    print("Error: /dev/spidev0.0 not found. Enable 'spi0' in rsetup.")
+    print("Error: /dev/spidev3.0 not found. Enable 'spi3' in rsetup.")
     sys.exit(1)
 
 spi.max_speed_hz = 500000 

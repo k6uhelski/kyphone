@@ -21,15 +21,15 @@ void setup() {
     };
 
     spi_slave_interface_config_t peripheral_config = {
-        .spics_io_num = 22, 
+        .spics_io_num = 15, // CHANGED FROM 22 TO 15
         .flags = 0,
         .queue_size = 3,
         .mode = 0,
     };
 
     // Note: HSPI_HOST and spi_slave_initialize are part of the ESP32 driver naming
-    spi_slave_initialize(HSPI_HOST, &bus_config, &peripheral_config, GPIO_INTR_DISABLED);
-    Serial.println("SYSTEM READY: POLLING SPI PERIPHERAL (PINS 13, 14, 22)");
+    spi_slave_initialize(HSPI_HOST, &bus_config, &peripheral_config, GPIO_INTR_DISABLE);
+    Serial.println("SYSTEM READY: POLLING SPI PERIPHERAL (PINS 13, 14, 15)");
 }
 
 void loop() {

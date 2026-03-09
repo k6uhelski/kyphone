@@ -21,7 +21,7 @@ node_modules
 
 # Local and Agent Files
 .gemini/
-kyphone_state.md
+work_log.md
 kyphone_journal.md
 kyphone_context.md
 __pycache__/
