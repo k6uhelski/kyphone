@@ -18,11 +18,14 @@ bool firstLoad = true;
 void setup() {
     Serial.begin(115200);
     delay(2000); 
-    Serial.println("\n--- KYPHONE SPI: SYNC PAYLOAD MODE ---");
+    Serial.println("\n--- KYPHONE SPI: ROBUST POLLING MODE ---");
     
     display.begin();
     display.clearDisplay();
     display.display(); 
+
+    memset(rx_buf, 0, 34);
+    memset(tx_buf, 0, 34);
 
     setupSPI();
 }
@@ -30,7 +33,7 @@ void setup() {
 void setupSPI() {
     spi_bus_config_t bus_config = {
         .mosi_io_num = PIN_MOSI, 
-        .miso_io_num = PIN_MISO, 
+        .miso_io_num = PIN_MISO, // Restore MISO for signaling
         .sclk_io_num = PIN_SCLK, 
         .quadwp_io_num = -1,
         .quadhd_io_num = -1,
@@ -46,13 +49,17 @@ void setupSPI() {
     esp_err_t ret = spi_slave_initialize(VSPI_HOST, &bus_config, &peripheral_config, SPI_DMA_CH_AUTO);
     if (ret != ESP_OK) {
         Serial.printf("SPI Slave Init Failed: %s\n", esp_err_to_name(ret));
+    } else {
+        Serial.println("SYSTEM READY: WAITING FOR RADXA...");
     }
 }
 
 void loop() {
-    memset(rx_buf, 0, 34);
+    memset(rx_buf, 0, sizeof(rx_buf));
+    
+    // PRE-LOAD THE READY SIGNAL (0x06 ACK)
     memset(tx_buf, 0, 34);
-    tx_buf[0] = 0x06; // ACK byte: Tells Radxa we are READY
+    tx_buf[0] = 0x06; 
 
     spi_slave_transaction_t t;
     memset(&t, 0, sizeof(t));
@@ -70,7 +77,6 @@ void loop() {
             if(rx_buf[i] == 0x02) { offset = i; break; }
         }
 
-        // If we found the header, we process the message
         if (offset != -1) {
             Serial.printf("SUCCESS! Found 0x02 at Offset %d. MSG: ", offset);
             Serial.println((char*)&rx_buf[offset+1]);
@@ -89,9 +95,6 @@ void loop() {
             delay(100);
             setupSPI(); 
             Serial.println("READY FOR NEXT COMMAND.");
-        } else {
-            // No header found? Means Radxa was likely polling. 
-            // Just loop back and wait again.
         }
     }
 }
