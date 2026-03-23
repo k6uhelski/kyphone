@@ -1,6 +1,16 @@
 import spidev
 import time
 import sys
+import gpiod
+
+# Radxa Pin 13 = gpiochip3, line 21
+PIN_HANDSHAKE = 21 
+CHIP_HANDSHAKE = 'gpiochip3'
+
+# GPIO Setup for Handshake (using v1.x syntax)
+chip = gpiod.Chip(CHIP_HANDSHAKE)
+line = chip.get_line(PIN_HANDSHAKE)
+line.request(consumer='kyphone', type=gpiod.LINE_REQ_DIR_IN)
 
 # Initialize SPI on Bus 3, CS 0
 spi = spidev.SpiDev()
@@ -10,39 +20,36 @@ except FileNotFoundError:
     print("Error: /dev/spidev3.0 not found.")
     sys.exit(1)
 
-spi.max_speed_hz = 50000 
+spi.max_speed_hz = 100000 # 100kHz: 272 bits = ~2.7ms, prevents kernel fragmentation
 spi.mode = 0 
+
+def wait_for_ready():
+    print("Waiting for Inkplate READY signal (Yellow Wire HIGH)...", end="\r")
+    while int(line.get_value()) == 0:
+        time.sleep(0.1)
+    print("Inkplate is READY!                           ")
 
 def send_message(text):
     # PADDING: 2 dummy bytes + Header (0x02) + 30 bytes MSG + Padding
     payload = [0x00, 0x00, 0x02] + [ord(c) for c in text[:30]]
     payload += [0x00] * (34 - len(payload))
     
+    # HANDSHAKE: Wait for Inkplate to be ready
+    wait_for_ready()
+    
     print(f"Sending message: '{text}'...")
     
-    # Retry Loop: The payload itself acts as the handshake
-    start_time = time.time()
-    attempts = 0
-    while True:
-        attempts += 1
-        # xfer2 sends the full 34-byte payload
-        # If the Inkplate is ready, rx[0] will be 0x06
-        rx = spi.xfer2(payload)
-        
-        if rx[0] == 0x06:
-            print(f"SUCCESS! Inkplate ACK received on attempt {attempts}.")
-            return True
-            
-        if time.time() - start_time > 15:
-            print("TIMEOUT: Inkplate is not responding.")
-            return False
-            
-        # Wait a bit before retrying (Inkplate might be refreshing)
-        time.sleep(0.5)
+    # xfer2 sends the full 34-byte payload
+    spi.xfer2(payload)
+    
+    print(f"Message sent. Waiting for Inkplate to process...")
+    # Wait for Inkplate to process (30s timeout + buffer)
+    time.sleep(35)
+    return True
 
 try:
-    print("--- Radxa SPI Controller (Sync Payload Mode) ---")
-    print("Wire Check: MOSI=19, MISO=21 (Yellow), SCLK=23, CS=24")
+    print("--- Radxa SPI Controller (3-Wire + Expander Handshake) ---")
+    print("Handshake: Pin 13 (Yellow Wire) MUST be HIGH to send.")
     while True:
         msg = input("KyPhone> ")
         if msg.lower() in ["exit", "quit"]: break
@@ -52,3 +59,4 @@ except KeyboardInterrupt:
     print("\nExiting")
 finally:
     spi.close()
+    line.release()
