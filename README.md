@@ -104,7 +104,20 @@ Bash
 
 ## **Development Log**
 
-### **November 12, 2025: Milestone 3 - Live Touchscreen Integration**
+### **March 15, 2026: Phase 1 - The SPI Handshake Nightmare (UNSTABLE)**
+
+Achieved the first *sporadic* text transfers between the Radxa Rock 3A and the Inkplate 4 TEMPERA. While a physical link was established, the system remains **highly unreliable and is currently a "one-hit wonder"**—it typically works for exactly one message and then fails consistently on all subsequent attempts until a hard reset.
+
+**The Current (Unstable) Solution: Synchronous Payload Polling**
+We moved away from "Blind Blasting" to a two-way conversation, but it is not yet robust:
+*   **Physical Change:** Connected the **Yellow Wire (MISO)** from Radxa Pin 21 to Inkplate IO 12 to enable bidirectional communication.
+*   **The ACK Strategy:** The Inkplate pre-loads its SPI outbox with `0x06` (ACK) when ready. The Radxa sends the full 34-byte message as a "poll" and checks the received first byte for the ACK.
+*   **Smart Scan:** The Inkplate firmware now scans the entire 34-byte buffer for the `0x02` header to handle shifting offsets.
+*   **Sync Logic:** Added `[0x00, 0x00]` dummy bytes to satisfy hardware wake-up lag.
+
+**Current Failure Point:** After the first successful display update, the ESP32 SPI slave consistently fails to re-synchronize after the E-ink refresh. The system is currently stuck in a state where it cannot receive multiple messages in a row.
+
+### **November 28, 2025: Milestone 4 - Conditional Screen Updates & Full Gestures**
 
 Successfully integrated the Inkplate's real touchscreen controller, completing the emulator-to-hardware loop. Replaced the mock coordinate system with a robust, non-blocking hardware loop.
 

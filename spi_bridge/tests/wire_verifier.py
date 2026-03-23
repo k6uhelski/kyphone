@@ -1,30 +1,39 @@
-import RPi.GPIO as GPIO
+import gpiod
 import time
 import sys
 
-# Radxa Rock 3A Pins
-MOSI = 19
-SCLK = 23
-CS0  = 24
+# Radxa Rock 3A SPI Pins on gpiochip3
+# Pin 19 (MOSI) = GPIO3_B1 (Line 9)
+# Pin 23 (SCLK) = GPIO3_B0 (Line 8)
+# Pin 24 (CS0)  = GPIO3_B2 (Line 10)
 
-GPIO.setmode(GPIO.BOARD)
-GPIO.setup([MOSI, SCLK, CS0], GPIO.OUT)
+CHIP = 'gpiochip3'
+PIN_MOSI = 9
+PIN_SCLK = 8
+PIN_CS   = 10
 
-print("--- Radxa Wiring Verifier ---")
-print(f"Toggling Pins: MOSI={MOSI}, SCLK={SCLK}, CS0={CS0}")
+chip = gpiod.Chip(CHIP)
+
+# Request all three pins as output
+lines = chip.get_lines([PIN_MOSI, PIN_SCLK, PIN_CS])
+lines.request(consumer='kyphone-verifier', type=gpiod.LINE_REQ_DIR_OUT)
+
+print("--- Radxa Wiring Verifier (gpiod) ---")
+print(f"Toggling Pins on {CHIP}:")
+print(f"  Pin 19 (MOSI) -> Line {PIN_MOSI}")
+print(f"  Pin 23 (SCLK) -> Line {PIN_SCLK}")
+print(f"  Pin 24 (CS0)  -> Line {PIN_CS}")
 print("Watch the Inkplate Serial Monitor (Signal_Detector.ino)")
 
 try:
-    state = True
+    state = 1
     while True:
-        val = GPIO.HIGH if state else GPIO.LOW
-        print(f"Setting pins to {'HIGH' if state else 'LOW'}...")
-        GPIO.output(MOSI, val)
-        GPIO.output(SCLK, val)
-        GPIO.output(CS0, val)
-        state = not state
+        print(f"Setting pins to {'HIGH' if state == 1 else 'LOW'}...")
+        lines.set_values([state, state, state])
+        state = 0 if state == 1 else 1
         time.sleep(1)
 except KeyboardInterrupt:
     print("\nExiting")
 finally:
-    GPIO.cleanup()
+    lines.release()
+    chip.close()

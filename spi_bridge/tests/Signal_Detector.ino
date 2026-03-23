@@ -1,54 +1,60 @@
-#include <Arduino.h>
+#include <Inkplate.h>
 
-// Inkplate IO Pins we are testing
-const int PIN_MOSI = 13;
-const int PIN_SCLK = 14;
-const int PIN_CS   = 15;
+Inkplate display(INKPLATE_1BIT);
+
+#define PIN_MOSI 13
+#define PIN_SCLK 14
+#define PIN_CS   15
+#define PIN_HANDSHAKE IO_PIN_B0 // P1-0
 
 void setup() {
     Serial.begin(115200);
-    delay(1000);
     
-    // Set all three SPI pins as basic inputs
+    // Initialize Inkplate & Handshake
+    display.begin();
+    display.pinModeIO(PIN_HANDSHAKE, OUTPUT);
+    
     pinMode(PIN_MOSI, INPUT);
     pinMode(PIN_SCLK, INPUT);
-    pinMode(PIN_CS, INPUT);
-
-    Serial.println("--- INKPLATE SIGNAL DETECTOR ---");
-    Serial.println("Waiting for signal changes on IO 13, 14, or 15...");
-    Serial.println("Run 'string_test.py' on the Radxa and send a message.");
+    pinMode(PIN_CS,   INPUT);
+    
+    delay(2000);
+    Serial.println("\n--- INKPLATE SIGNAL DETECTOR (HANDSHAKE READY) ---");
+    Serial.println("Watching MOSI(13), SCLK(14), CS(15).");
+    
+    // SIGNAL READY TO RADXA
+    display.digitalWriteIO(PIN_HANDSHAKE, HIGH);
+    Serial.println("Handshake HIGH. Send a message from Radxa now...");
 }
 
-// Variables to track the last known state
-int last_mosi = -1;
-int last_sclk = -1;
-int last_cs   = -1;
-
 void loop() {
-    int current_mosi = digitalRead(PIN_MOSI);
-    int current_sclk = digitalRead(PIN_SCLK);
-    int current_cs   = digitalRead(PIN_CS);
-
-    // If any pin changes state, print it out immediately
-    if (current_mosi != last_mosi) {
-        Serial.print("DETECTED: MOSI (IO 13) changed to ");
-        Serial.println(current_mosi);
-        last_mosi = current_mosi;
+    static int last_cs = -1;
+    int cs = digitalRead(PIN_CS);
+    
+    // 1. Monitor Chip Select (The "Start" signal)
+    if (cs != last_cs) {
+        Serial.printf("CS (Pin 15) is now: %s\n", cs == HIGH ? "HIGH (Idle)" : "LOW (ACTIVE)");
+        last_cs = cs;
     }
     
-    if (current_sclk != last_sclk) {
-        Serial.print("DETECTED: SCLK (IO 14) changed to ");
-        Serial.println(current_sclk);
-        last_sclk = current_sclk;
+    // 2. If Radxa is talking (CS is LOW), count the clock pulses
+    if (cs == LOW) {
+        long pulses = 0;
+        int mosi_high_count = 0;
+        unsigned long start_time = millis();
+        
+        // Sample for 100ms
+        while(millis() - start_time < 100) {
+            if (digitalRead(PIN_SCLK) == HIGH) {
+                pulses++;
+                if (digitalRead(PIN_MOSI) == HIGH) mosi_high_count++;
+                while(digitalRead(PIN_SCLK) == HIGH && (millis() - start_time < 100)); // Wait for fall
+            }
+        }
+        
+        if (pulses > 0) {
+            Serial.printf(">> SUCCESS: Received %ld bits. Data seen on MOSI: %s\n", 
+                          pulses, mosi_high_count > 0 ? "YES" : "NONE (All Zeros)");
+        }
     }
-    
-    if (current_cs != last_cs) {
-        Serial.print("DETECTED: CS (IO 15) changed to ");
-        Serial.println(current_cs);
-        last_cs = current_cs;
-    }
-
-    // Small delay to prevent flooding the serial monitor
-    // We might miss high-speed toggles, but we will catch *some* activity
-    delay(1); 
 }
