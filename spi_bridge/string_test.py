@@ -20,7 +20,7 @@ except FileNotFoundError:
     print("Error: /dev/spidev3.0 not found.")
     sys.exit(1)
 
-spi.max_speed_hz = 100000 # 100kHz: 272 bits = ~2.7ms, prevents kernel fragmentation
+spi.max_speed_hz = 5000 # 5kHz: slow enough for Rockchip DMA to deliver all 272 bits
 spi.mode = 0 
 
 def wait_for_ready():
@@ -39,12 +39,9 @@ def send_message(text):
     
     print(f"Sending message: '{text}'...")
     
-    # xfer2 sends the full 34-byte payload
     spi.xfer2(payload)
     
-    print(f"Message sent. Waiting for Inkplate to process...")
-    # Wait for Inkplate to process (30s timeout + buffer)
-    time.sleep(35)
+    print(f"Message sent.")
     return True
 
 try:

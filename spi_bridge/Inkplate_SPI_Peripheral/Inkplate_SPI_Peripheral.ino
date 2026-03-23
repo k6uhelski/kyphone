@@ -121,13 +121,13 @@ void loop() {
     if (now - last_debug > 2000) {
         last_debug = now;
         int cs_val = digitalRead(PIN_CS);
-        Serial.printf("DEBUG: CS_VAL: %d | Falling: %d | SCLK_Total: %d | Bits: %d\n", 
-            cs_val, debug_cs_falling, debug_sclk_total, bit_counter);
+        Serial.printf("DEBUG [%lums]: SCLK_Total: %d | Bits: %d | CS: %d\n",
+            millis(), debug_sclk_total, bit_counter, cs_val);
     }
 
-    // Framing: 30s diagnostic timeout — proves bits all arrive eventually (software SPI hypothesis)
+    // Framing: 500ms silence = end of message (54ms transfer at 5kHz + 10x margin)
     if (!transfer_complete && bit_counter > 0) {
-        if (now_us - last_sclk_time > 30000000) {
+        if (now_us - last_sclk_time > 500000) {
             if (bit_counter == TOTAL_BITS) {
                 transfer_complete = true;
             } else if (bit_counter > TOTAL_BITS) {
@@ -135,8 +135,9 @@ void loop() {
                 bit_counter = 0;
             } else {
                 // Partial chunk — keep accumulating, don't reset.
-                // Remaining bits will land at correct buffer positions.
+                // Reset timer so this doesn't re-fire every loop() iteration.
                 Serial.printf(">> PARTIAL: %d/272 bits. Waiting for rest...\n", bit_counter);
+                last_sclk_time = micros();
             }
         }
     }
