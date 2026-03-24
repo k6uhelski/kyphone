@@ -29,10 +29,11 @@ def wait_for_ready():
         time.sleep(0.1)
     print("Inkplate is READY!                           ")
 
+PAYLOAD_BYTES = 128
+
 def send_message(text):
-    # PADDING: 2 dummy bytes + Header (0x02) + 30 bytes MSG + Padding
-    payload = [0x00, 0x00, 0x02] + [ord(c) for c in text[:30]]
-    payload += [0x00] * (34 - len(payload))
+    payload = [0x00, 0x00, 0x02] + [ord(c) for c in text[:PAYLOAD_BYTES-3]]
+    payload += [0x00] * (PAYLOAD_BYTES - len(payload))
     
     # HANDSHAKE: Wait for Inkplate to be ready
     wait_for_ready()

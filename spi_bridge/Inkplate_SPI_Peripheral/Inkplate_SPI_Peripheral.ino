@@ -13,7 +13,7 @@ Inkplate display(INKPLATE_1BIT);
 #define PIN_HANDSHAKE IO_PIN_B0 // P1-0 expander pin
 
 // --- ISR Variables ---
-#define PAYLOAD_BYTES 34
+#define PAYLOAD_BYTES 128
 #define TOTAL_BITS (PAYLOAD_BYTES * 8)
 
 volatile uint8_t rx_buf[PAYLOAD_BYTES];
@@ -136,7 +136,7 @@ void loop() {
             } else {
                 // Partial chunk — keep accumulating, don't reset.
                 // Reset timer so this doesn't re-fire every loop() iteration.
-                Serial.printf(">> PARTIAL: %d/272 bits. Waiting for rest...\n", bit_counter);
+                Serial.printf(">> PARTIAL: %d/%d bits. Waiting for rest...\n", bit_counter, TOTAL_BITS);
                 last_sclk_time = micros();
             }
         }
@@ -158,11 +158,25 @@ void loop() {
         }
 
         if (offset != -1) {
-            Serial.printf("SUCCESS! MSG: %s\n", (char*)&local_buf[offset+1]);
+            char* text = (char*)&local_buf[offset+1];
+            Serial.printf("SUCCESS! MSG: %s\n", text);
+
             display.clearDisplay();
-            display.setTextSize(4);
-            display.setCursor(50, 200);
-            display.print((char*)&local_buf[offset+1]);
+            display.setTextSize(2);
+
+            char* pipe = strchr(text, '|');
+            if (pipe != NULL) {
+                // SMS format: "FROM: Kyle|Hey, are you free?"
+                *pipe = '\0';
+                display.setCursor(10, 10);
+                display.print(text);       // sender line
+                display.setCursor(10, 40);
+                display.print(pipe + 1);   // message body
+            } else {
+                // Plain text (backward compatible with string_test.py)
+                display.setCursor(10, 10);
+                display.print(text);
+            }
             display.display();
             delay(100);
             display.einkOff();

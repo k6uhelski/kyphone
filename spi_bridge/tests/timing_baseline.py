@@ -10,7 +10,7 @@ SPI_BUS = 3
 SPI_DEV = 0
 SPI_SPEED_HZ = 5000 # 5kHz: known to deliver all 272 bits on Rockchip
 
-PAYLOAD_BYTES = 34
+PAYLOAD_BYTES = 128
 MESSAGE = "timing baseline"
 ITERATIONS = 3
 DETECT_TIMEOUT_S = 120

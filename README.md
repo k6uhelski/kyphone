@@ -1,25 +1,32 @@
 # **KyPhone Display Driver**
 
-This repo contains the prototype display driver and UI dev environment for the KyPhone project. This code provides a communication bridge between an Android application running in an emulator and an Inkplate 4 TEMPERA e-ink display, enabling screen mirroring and bidirectional data transfer.
+KyPhone is a minimal phone designed to revolt against the attention economy. It uses a **Radxa Rock 3A** (SBC running Linux) as the logic master and an **Inkplate 4 TEMPERA** (ESP32-based E-ink display) as the peripheral. The goal is a device that gets out of the way of real-world connection.
 
 ---
 
-## **Current Status (November 28, 2025)**
+## **Current Status (March 23, 2026)**
 
-We have achieved the first phase of synchronized mirroring by preventing redundant updates and implementing full touch controls.
+The SPI communication layer between the Radxa and the Inkplate is fully proven and production-ready. Text pushed from the Radxa appears on the E-ink screen in **~1.7 seconds**, reliably, 5/5 consecutive sends.
 
-* **Change Detection:** The Android app now compares the current frame to the last-sent frame. If they are identical, no data is sent to the hardware.
-* **Full Gesture Support:** The touch protocol now supports full gesture events (`DOWN`, `DRAG`, `UP`) instead of simple taps. This allows users to swipe, scroll, and drag items on the Android emulator using the physical e-ink touchscreen.
-* **Simplified Architecture:** The Python proxy script no longer processes data or uses external tools. It simply forwards data between the Android App and the Inkplate firmware.
+### **What works today**
+- **Reliable SPI transport:** Radxa → Inkplate over 3-wire software SPI + handshake. 128-byte payload, 5kHz clock.
+- **1.7s end-to-end latency:** 204ms transfer + 500ms framing timeout + 1.1s E-ink refresh.
+- **Two-way handshake:** Yellow wire (P1-0 expander) signals Inkplate ready/busy. Python blocks on it correctly.
+- **SMS display layout:** Firmware parses `SENDER|body` format and renders sender + message in two lines.
+- **Test suite:** `timing_baseline.py` (measures latency) and `timing_test.py` (asserts 5/5 pass) in `spi_bridge/tests/`.
 
-### **Next Milestone: Performance & Calibration**
+### **Next Milestone: Live SMS Demo**
+Two-way SMS via Twilio — friends text a real phone number, message appears on E-ink in ~2 seconds, replies sent from Radxa terminal. See `spi_bridge/kyphone_sms.py`.
 
-Now that the system is functional, we need to refine the user experience and optimize data transfer.
+**Setup required:**
+1. Twilio account + phone number (~$1/month)
+2. On Radxa: `pip install twilio`
+3. Set env vars: `TWILIO_SID`, `TWILIO_TOKEN`, `TWILIO_NUMBER`
+4. Run: `python3 spi_bridge/kyphone_sms.py`
 
-* **Touch Calibration:** The current touch inputs are inaccurate, meaning a physical tap often registers in the wrong location on the Android screen. We need to fix the coordinate mapping to ensure physical touches align perfectly with the digital UI.
-* **Display Scaling:** The Android interface does not currently fit the Inkplate screen dimensions correctly. We need to adjust the image resizing logic to ensure the UI is scaled and centered properly without distortion.
-* **Differential Updates:** When a change is detected, the app will calculate a "diff" (the difference) and send *only* the changed pixels.
-* **Partial Refresh:** The Inkplate firmware will be updated to receive these partial "diff" commands and draw them directly, allowing for fast, flash-free updates for small UI changes.
+### **Hardware roadmap**
+- Quectel EC25-AF cellular modem (USB + M.2 Key-B enclosure) — ordered, for native SMS without Twilio
+- Physical keyboard — required for production reply input (Radxa touchscreen is unreliable for text input)
 
 ---
 
@@ -103,6 +110,16 @@ Bash
 ---
 
 ## **Development Log**
+
+### **March 23, 2026: SPI Transport Proven — "hello world" on E-ink**
+
+Solved the SPI communication layer completely. Key breakthroughs:
+
+* **IO_MUX reclaim:** `Inkplate.h` calls `SPI.begin()` which reassigns GPIO 13 (MOSI) and GPIO 15 (CS) to the hardware SPI peripheral at the IO_MUX level, bypassing the GPIO Matrix. `attachInterrupt()` is blind to pins in IO_MUX mode. Fix: call `PIN_FUNC_SELECT(IO_MUX_GPIO13_REG, 2)` and `PIN_FUNC_SELECT(IO_MUX_GPIO15_REG, 2)` after `display.begin()` to force both pins back to GPIO mode.
+* **CS abandoned:** GPIO 15 is the ESP32 MTDO strapping pin. The display controller PCB traces hold it LOW permanently. Switched to SCLK-timeout framing — 500ms of silence after the last clock edge signals end-of-message.
+* **Partial accumulation:** The Rockchip SPI DMA at 5kHz delivers all 272 bits in one 54ms burst, but we accumulated bits across multiple attempts while debugging. Current firmware never resets `bit_counter` on a partial timeout — it just waits for more bits.
+* **30-second bottleneck diagnosed:** `timing_baseline.py` revealed the Radxa sends all bits in 54ms, but the firmware waited 30 seconds before evaluating. Reducing the timeout to 500ms dropped end-to-end latency from ~2 minutes to 1.7 seconds.
+* **Payload expanded:** 34 → 128 bytes. Enables full SMS message display.
 
 ### **March 15, 2026: Phase 1 - The SPI Handshake Nightmare (UNSTABLE)**
 
