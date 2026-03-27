@@ -162,18 +162,20 @@ void loop() {
             Serial.printf("SUCCESS! MSG: %s\n", text);
 
             display.clearDisplay();
-            display.setTextSize(2);
 
             char* pipe = strchr(text, '|');
             if (pipe != NULL) {
-                // SMS format: "FROM: Kyle|Hey, are you free?"
+                // SMS format: "SENDER|body"
                 *pipe = '\0';
+                display.setTextSize(3);
                 display.setCursor(10, 10);
                 display.print(text);       // sender line
-                display.setCursor(10, 40);
+                display.setTextSize(4);
+                display.setCursor(10, 60);
                 display.print(pipe + 1);   // message body
             } else {
                 // Plain text (backward compatible with string_test.py)
+                display.setTextSize(4);
                 display.setCursor(10, 10);
                 display.print(text);
             }
