@@ -162,26 +162,30 @@ void loop() {
 
             if (marker == 0x03) {
                 // --- Display region update (partial refresh) ---
-                int x = (local_buf[offset+1] << 8) | local_buf[offset+2];
-                int y = (local_buf[offset+3] << 8) | local_buf[offset+4];
-                int w = (local_buf[offset+5] << 8) | local_buf[offset+6];
-                int h = (local_buf[offset+7] << 8) | local_buf[offset+8];
-                uint8_t* pixels = &local_buf[offset+9];
-                int pixel_count = w * h;
+                uint8_t flags = local_buf[offset+1];
+                bool last_chunk = (flags & 0x01) == 0x00;
+                int x = (local_buf[offset+2] << 8) | local_buf[offset+3];
+                int y = (local_buf[offset+4] << 8) | local_buf[offset+5];
+                int w = (local_buf[offset+6] << 8) | local_buf[offset+7];
+                int h = (local_buf[offset+8] << 8) | local_buf[offset+9];
+                uint8_t* pixels = &local_buf[offset+10];
                 int byte_idx = 0;
                 int bit_idx = 7;
 
-                Serial.printf("REGION: (%d,%d) %dx%d\n", x, y, w, h);
+                Serial.printf("REGION: (%d,%d) %dx%d last=%d\n", x, y, w, h, last_chunk);
 
-                for (int py = y; py < y + h; py++) {
-                    for (int px = x; px < x + w; px++) {
+                for (int py = y; py < y + h && byte_idx < PAYLOAD_BYTES; py++) {
+                    for (int px = x; px < x + w && byte_idx < PAYLOAD_BYTES; px++) {
                         bool white = (pixels[byte_idx] >> bit_idx) & 0x1;
                         display.drawPixel(px, py, white ? WHITE : BLACK);
                         if (--bit_idx < 0) { bit_idx = 7; byte_idx++; }
                     }
                 }
-                display.partialUpdate();
-                reclaim_spi_pins_for_gpio();
+
+                if (last_chunk) {
+                    display.partialUpdate();
+                    reclaim_spi_pins_for_gpio();
+                }
 
             } else {
                 // --- SMS text message (full refresh, 0x02 marker) ---

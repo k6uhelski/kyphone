@@ -19,8 +19,10 @@ FPS = 5
 FRAME_INTERVAL = 1.0 / FPS
 
 PAYLOAD_BYTES = 128
-HEADER_BYTES = 11         # [0x00, 0x00, 0x03, x_hi, x_lo, y_hi, y_lo, w_hi, w_lo, h_hi, h_lo]
-DATA_BYTES = PAYLOAD_BYTES - HEADER_BYTES  # 117 bytes = 936 pixels per transfer
+HEADER_BYTES = 12         # [0x00, 0x00, 0x03, flags, x_hi, x_lo, y_hi, y_lo, w_hi, w_lo, h_hi, h_lo]
+DATA_BYTES = PAYLOAD_BYTES - HEADER_BYTES  # 116 bytes = 928 pixels per transfer
+FLAG_MORE = 0x01          # bit 0: more chunks follow
+FLAG_LAST = 0x00          # bit 0: this is the last chunk
 
 # --- Init SPI ---
 spi = spidev.SpiDev()
@@ -98,7 +100,7 @@ def encode_region(img, bbox):
 
 
 def send_region(bbox, pixel_data):
-    """Split region into 128-byte SPI transfers and send each."""
+    """Split region into 128-byte SPI transfers. Only last chunk triggers partialUpdate."""
     x, y, w, h = bbox
 
     offset = 0
@@ -106,11 +108,13 @@ def send_region(bbox, pixel_data):
 
     while offset < total:
         chunk = pixel_data[offset:offset + DATA_BYTES]
-        chunk_len = len(chunk)
+        is_last = (offset + DATA_BYTES >= total)
+        flags = FLAG_LAST if is_last else FLAG_MORE
 
-        # Header: marker, x, y, w, h (all as 16-bit big-endian)
+        # Header: marker, flags, x, y, w, h (all as 16-bit big-endian)
         payload = [
             0x00, 0x00, 0x03,
+            flags,
             (x >> 8) & 0xFF, x & 0xFF,
             (y >> 8) & 0xFF, y & 0xFF,
             (w >> 8) & 0xFF, w & 0xFF,
