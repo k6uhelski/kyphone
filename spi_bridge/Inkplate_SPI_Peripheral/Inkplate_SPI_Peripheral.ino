@@ -154,35 +154,63 @@ void loop() {
 
         int offset = -1;
         for(int i=0; i<PAYLOAD_BYTES; i++) {
-            if(local_buf[i] == 0x02) { offset = i; break; }
+            if(local_buf[i] == 0x02 || local_buf[i] == 0x03) { offset = i; break; }
         }
 
         if (offset != -1) {
-            char* text = (char*)&local_buf[offset+1];
-            Serial.printf("SUCCESS! MSG: %s\n", text);
+            uint8_t marker = local_buf[offset];
 
-            display.clearDisplay();
+            if (marker == 0x03) {
+                // --- Display region update (partial refresh) ---
+                int x = (local_buf[offset+1] << 8) | local_buf[offset+2];
+                int y = (local_buf[offset+3] << 8) | local_buf[offset+4];
+                int w = (local_buf[offset+5] << 8) | local_buf[offset+6];
+                int h = (local_buf[offset+7] << 8) | local_buf[offset+8];
+                uint8_t* pixels = &local_buf[offset+9];
+                int pixel_count = w * h;
+                int byte_idx = 0;
+                int bit_idx = 7;
 
-            char* pipe = strchr(text, '|');
-            if (pipe != NULL) {
-                // SMS format: "SENDER|body"
-                *pipe = '\0';
-                display.setTextSize(3);
-                display.setCursor(10, 10);
-                display.print(text);       // sender line
-                display.setTextSize(4);
-                display.setCursor(10, 60);
-                display.print(pipe + 1);   // message body
+                Serial.printf("REGION: (%d,%d) %dx%d\n", x, y, w, h);
+
+                for (int py = y; py < y + h; py++) {
+                    for (int px = x; px < x + w; px++) {
+                        bool white = (pixels[byte_idx] >> bit_idx) & 0x1;
+                        display.drawPixel(px, py, white ? WHITE : BLACK);
+                        if (--bit_idx < 0) { bit_idx = 7; byte_idx++; }
+                    }
+                }
+                display.partialUpdate();
+                reclaim_spi_pins_for_gpio();
+
             } else {
-                // Plain text (backward compatible with string_test.py)
-                display.setTextSize(4);
-                display.setCursor(10, 10);
-                display.print(text);
+                // --- SMS text message (full refresh, 0x02 marker) ---
+                char* text = (char*)&local_buf[offset+1];
+                Serial.printf("SUCCESS! MSG: %s\n", text);
+
+                display.clearDisplay();
+
+                char* pipe = strchr(text, '|');
+                if (pipe != NULL) {
+                    // SMS format: "SENDER|body"
+                    *pipe = '\0';
+                    display.setTextSize(3);
+                    display.setCursor(10, 10);
+                    display.print(text);       // sender line
+                    display.setTextSize(4);
+                    display.setCursor(10, 60);
+                    display.print(pipe + 1);   // message body
+                } else {
+                    // Plain text (backward compatible with string_test.py)
+                    display.setTextSize(4);
+                    display.setCursor(10, 10);
+                    display.print(text);
+                }
+                display.display();
+                delay(100);
+                display.einkOff();
+                reclaim_spi_pins_for_gpio();
             }
-            display.display();
-            delay(100);
-            display.einkOff();
-            reclaim_spi_pins_for_gpio();
         } else {
             Serial.println(">> ERROR: No Header (0x02). Check MOSI wiring.");
             Serial.printf("Raw Data: %02X %02X %02X %02X\n", local_buf[0], local_buf[1], local_buf[2], local_buf[3]);
