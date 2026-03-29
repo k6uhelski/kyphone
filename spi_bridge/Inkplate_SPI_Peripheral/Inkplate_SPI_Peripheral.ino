@@ -89,6 +89,118 @@ void IRAM_ATTR cs_falling_isr() {
     last_cs_time = now;
 }
 
+// --- Screen Renderers ---
+
+void render_home(char* data) {
+    // data = "HH:MM|Day, Mon DD|N new messages"
+    char time_str[16] = "";
+    char date_str[32] = "";
+    char notif_str[32] = "";
+
+    char* p1 = strchr(data, '|');
+    if (p1 != NULL) {
+        strncpy(time_str, data, p1 - data);
+        char* p2 = strchr(p1 + 1, '|');
+        if (p2 != NULL) {
+            strncpy(date_str, p1 + 1, p2 - p1 - 1);
+            strncpy(notif_str, p2 + 1, sizeof(notif_str) - 1);
+        } else {
+            strncpy(date_str, p1 + 1, sizeof(date_str) - 1);
+        }
+    } else {
+        strncpy(time_str, data, sizeof(time_str) - 1);
+    }
+
+    // Status bar placeholder
+    display.setTextSize(2);
+    display.setCursor(10, 8);
+    display.print("KyPhone");
+
+    // Divider under status bar
+    display.drawLine(0, 34, 600, 34, BLACK);
+
+    // Clock — large, centered
+    display.setTextSize(10);
+    int clock_x = 30;
+    display.setCursor(clock_x, 60);
+    display.print(time_str);
+
+    // Date — medium, centered
+    display.setTextSize(3);
+    int date_w = strlen(date_str) * 18;
+    display.setCursor((600 - date_w) / 2, 200);
+    display.print(date_str);
+
+    // Divider
+    display.drawLine(0, 260, 600, 260, BLACK);
+
+    // Notification summary
+    display.setTextSize(3);
+    display.setCursor(20, 290);
+    display.print(notif_str);
+}
+
+void render_msg_list(char* data) {
+    // data = "Name1·preview1|Name2·preview2|..."
+    display.setTextSize(3);
+    display.setCursor(20, 10);
+    display.print("Messages");
+    display.drawLine(0, 46, 600, 46, BLACK);
+
+    int y = 60;
+    char* entry = data;
+    while (entry != NULL && y < 560) {
+        char* next = strchr(entry, '|');
+        char entry_buf[64] = "";
+        if (next != NULL) {
+            strncpy(entry_buf, entry, next - entry);
+            entry = next + 1;
+        } else {
+            strncpy(entry_buf, entry, sizeof(entry_buf) - 1);
+            entry = NULL;
+        }
+
+        // Split entry on middle dot (0xB7 in UTF-8 is 0xC2 0xB7, use ASCII · = 0xB7 raw)
+        char* dot = strchr(entry_buf, '\xB7');
+        if (dot != NULL) {
+            *dot = '\0';
+            // Name — bold (larger)
+            display.setTextSize(3);
+            display.setCursor(20, y);
+            display.print(entry_buf);
+            // Preview — smaller, indented
+            display.setTextSize(2);
+            display.setCursor(20, y + 34);
+            display.print(dot + 1);
+        } else {
+            display.setTextSize(3);
+            display.setCursor(20, y);
+            display.print(entry_buf);
+        }
+
+        y += 90;
+        display.drawLine(0, y - 6, 600, y - 6, BLACK);
+    }
+}
+
+void render_sms(char* text) {
+    // "SENDER|body" — two-line SMS format
+    char* pipe = strchr(text, '|');
+    if (pipe != NULL) {
+        *pipe = '\0';
+        display.setTextSize(3);
+        display.setCursor(10, 10);
+        display.print(text);
+        display.setTextSize(4);
+        display.setCursor(10, 60);
+        display.print(pipe + 1);
+    } else {
+        display.setTextSize(4);
+        display.setCursor(10, 10);
+        display.print(text);
+    }
+}
+
 void setup() {
     Serial.begin(115200);
     delay(2000); 
@@ -188,28 +300,20 @@ void loop() {
                 }
 
             } else {
-                // --- SMS text message (full refresh, 0x02 marker) ---
+                // --- 0x02: screen command or SMS ---
                 char* text = (char*)&local_buf[offset+1];
                 Serial.printf("SUCCESS! MSG: %s\n", text);
 
                 display.clearDisplay();
 
-                char* pipe = strchr(text, '|');
-                if (pipe != NULL) {
-                    // SMS format: "SENDER|body"
-                    *pipe = '\0';
-                    display.setTextSize(3);
-                    display.setCursor(10, 10);
-                    display.print(text);       // sender line
-                    display.setTextSize(4);
-                    display.setCursor(10, 60);
-                    display.print(pipe + 1);   // message body
+                if (strncmp(text, "HOME|", 5) == 0) {
+                    render_home(text + 5);
+                } else if (strncmp(text, "MSG_LIST|", 9) == 0) {
+                    render_msg_list(text + 9);
                 } else {
-                    // Plain text (backward compatible with string_test.py)
-                    display.setTextSize(4);
-                    display.setCursor(10, 10);
-                    display.print(text);
+                    render_sms(text);
                 }
+
                 display.display();
                 delay(100);
                 display.einkOff();
