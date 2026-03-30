@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import json
 import threading
 from datetime import datetime
 import spidev
@@ -33,6 +34,10 @@ SMS_DISPLAY_DURATION = 10   # seconds to show SMS before returning to home
 CLOCK_UPDATE_INTERVAL = 60  # seconds between home screen refreshes
 SMS_POLL_INTERVAL = 2       # seconds between Twilio polls
 
+# --- Persistence ---
+DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
+MESSAGES_FILE = os.path.join(DATA_DIR, 'messages.json')
+
 # --- Init SPI ---
 chip = gpiod.Chip(CHIP)
 handshake = chip.get_line(HANDSHAKE_LINE)
@@ -59,6 +64,30 @@ state = {
     'last_sender': None,
     'lock': threading.Lock(),
 }
+
+
+# --- Persistence Helpers ---
+
+def load_messages():
+    try:
+        with open(MESSAGES_FILE, 'r') as f:
+            data = json.load(f)
+        state['messages'] = data.get('messages', [])
+        state['last_sid'] = data.get('last_sid')
+        print(f"Loaded {len(state['messages'])} messages from disk.")
+    except FileNotFoundError:
+        pass
+    except Exception as e:
+        print(f"Warning: could not load messages: {e}")
+
+
+def save_messages():
+    try:
+        os.makedirs(DATA_DIR, exist_ok=True)
+        with open(MESSAGES_FILE, 'w') as f:
+            json.dump({'messages': state['messages'], 'last_sid': state['last_sid']}, f)
+    except Exception as e:
+        print(f"Warning: could not save messages: {e}")
 
 
 # --- SPI Helpers ---
@@ -166,6 +195,7 @@ def sms_loop():
                         'body': msg.body,
                         'read': False,
                     })
+                    save_messages()
                 print(f"\n[NEW SMS] {name}: {msg.body}")
                 push_sms(name, msg.body)
                 # Return to home after SMS_DISPLAY_DURATION seconds
@@ -192,14 +222,18 @@ def send_reply(to_number, body):
 
 
 def main():
-    # Seed last_sid to avoid replaying old messages
-    try:
-        recent = client.messages.list(to=TWILIO_NUMBER, limit=1)
-        if recent:
-            state['last_sid'] = recent[0].sid
-            print(f"Starting from SID: {state['last_sid']}")
-    except Exception as e:
-        print(f"Warning: could not seed SID: {e}")
+    # Load persisted messages from disk
+    load_messages()
+
+    # Seed last_sid to avoid replaying old messages (only if not loaded from disk)
+    if state['last_sid'] is None:
+        try:
+            recent = client.messages.list(to=TWILIO_NUMBER, limit=1)
+            if recent:
+                state['last_sid'] = recent[0].sid
+                print(f"Starting from SID: {state['last_sid']}")
+        except Exception as e:
+            print(f"Warning: could not seed SID: {e}")
 
     # Start background threads
     threading.Thread(target=clock_loop, daemon=True).start()
