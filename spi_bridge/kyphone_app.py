@@ -207,26 +207,35 @@ def main():
 
     print("\n--- KyPhone OS ---")
     print(f"Number: {TWILIO_NUMBER}")
-    print("Type replies below. 'msgs' to see message list. 'home' for home screen. 'exit' to quit.\n")
+
+    # If running interactively (terminal attached), enable reply prompt
+    interactive = sys.stdin.isatty()
+    if interactive:
+        print("Type replies below. 'msgs' to see message list. 'home' for home screen. 'exit' to quit.\n")
 
     try:
-        while True:
-            reply = input("KyPhone> ").strip()
-            if reply.lower() in ('exit', 'quit'):
-                break
-            elif reply.lower() == 'home':
-                push_home()
-            elif reply.lower() == 'msgs':
-                push_msg_list()
-            elif not reply:
-                continue
-            else:
-                with state['lock']:
-                    last_sender = state['last_sender']
-                if last_sender is None:
-                    print("No messages received yet — no sender to reply to.")
+        if interactive:
+            while True:
+                reply = input("KyPhone> ").strip()
+                if reply.lower() in ('exit', 'quit'):
+                    break
+                elif reply.lower() == 'home':
+                    push_home()
+                elif reply.lower() == 'msgs':
+                    push_msg_list()
+                elif not reply:
+                    continue
                 else:
-                    send_reply(last_sender, reply)
+                    with state['lock']:
+                        last_sender = state['last_sender']
+                    if last_sender is None:
+                        print("No messages received yet — no sender to reply to.")
+                    else:
+                        send_reply(last_sender, reply)
+        else:
+            # Running as systemd service — just keep alive
+            while state['running']:
+                time.sleep(1)
     except KeyboardInterrupt:
         pass
     finally:
