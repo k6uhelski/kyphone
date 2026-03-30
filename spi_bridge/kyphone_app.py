@@ -252,13 +252,23 @@ def _restore_screen():
 
 # --- Loops ---
 
+def push_clock_tick():
+    """Partial update — just the time, no full redraw."""
+    now = datetime.now()
+    time_str = now.strftime("%-I:%M %p")
+    push_screen(f"HOME_TICK|{time_str}")
+
+
 def clock_loop():
-    """Push home screen every minute."""
-    push_home()  # push immediately on start
+    """Push full home screen on start, then partial clock tick every minute."""
+    push_home()  # full refresh to set layout
     while state['running']:
         time.sleep(CLOCK_UPDATE_INTERVAL)
         if state['running']:
-            push_home()
+            with state['lock']:
+                screen = state['nav']['screen']
+            if screen == 'HOME':
+                push_clock_tick()
 
 
 def sms_loop():

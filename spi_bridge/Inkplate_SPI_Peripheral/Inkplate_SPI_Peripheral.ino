@@ -230,6 +230,14 @@ void render_msg_thread(char* data) {
     }
 }
 
+void render_clock_tick(char* time_str) {
+    // Erase only the clock region and redraw, then partial update
+    display.fillRect(0, 55, 600, 110, WHITE);
+    display.setTextSize(10);
+    display.setCursor(30, 60);
+    display.print(time_str);
+}
+
 void render_sms(char* text) {
     // "SENDER|body" — two-line SMS format
     char* pipe = strchr(text, '|');
@@ -351,32 +359,39 @@ void loop() {
                 char* text = (char*)&local_buf[offset+1];
                 Serial.printf("SUCCESS! MSG: %s\n", text);
 
-                display.clearDisplay();
-
-                if (strncmp(text, "HOME|", 5) == 0) {
-                    render_home(text + 5);
-                } else if (strncmp(text, "MSG_LIST|", 9) == 0) {
-                    // First token after MSG_LIST| is the selected index
-                    char* after = text + 9;
-                    int sel = 0;
-                    char* idx_end = strchr(after, '|');
-                    if (idx_end != NULL) {
-                        char idx_buf[4] = "";
-                        strncpy(idx_buf, after, idx_end - after);
-                        sel = atoi(idx_buf);
-                        after = idx_end + 1;
-                    }
-                    render_msg_list(after, sel);
-                } else if (strncmp(text, "MSG_THREAD|", 11) == 0) {
-                    render_msg_thread(text + 11);
+                if (strncmp(text, "HOME_TICK|", 10) == 0) {
+                    // Partial update — do NOT clearDisplay, do NOT call display()
+                    render_clock_tick(text + 10);
+                    display.partialUpdate();
+                    delay(100);
+                    display.einkOff();
+                    reclaim_spi_pins_for_gpio();
                 } else {
-                    render_sms(text);
+                    display.clearDisplay();
+                    if (strncmp(text, "HOME|", 5) == 0) {
+                        render_home(text + 5);
+                    } else if (strncmp(text, "MSG_LIST|", 9) == 0) {
+                        // First token after MSG_LIST| is the selected index
+                        char* after = text + 9;
+                        int sel = 0;
+                        char* idx_end = strchr(after, '|');
+                        if (idx_end != NULL) {
+                            char idx_buf[4] = "";
+                            strncpy(idx_buf, after, idx_end - after);
+                            sel = atoi(idx_buf);
+                            after = idx_end + 1;
+                        }
+                        render_msg_list(after, sel);
+                    } else if (strncmp(text, "MSG_THREAD|", 11) == 0) {
+                        render_msg_thread(text + 11);
+                    } else {
+                        render_sms(text);
+                    }
+                    display.display();
+                    delay(100);
+                    display.einkOff();
+                    reclaim_spi_pins_for_gpio();
                 }
-
-                display.display();
-                delay(100);
-                display.einkOff();
-                reclaim_spi_pins_for_gpio();
             }
         } else {
             Serial.println(">> ERROR: No Header (0x02). Check MOSI wiring.");
