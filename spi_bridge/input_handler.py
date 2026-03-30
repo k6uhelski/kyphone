@@ -61,6 +61,7 @@ class KeyboardHandler:
                         # evdev may return a list for aliased keys
                         if isinstance(keycode, list):
                             keycode = keycode[0]
+                        print(f"[keyboard] key: {keycode}")
                         if keycode in NAV_KEYS:
                             self.on_key(keycode)
         except OSError:
