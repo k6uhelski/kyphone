@@ -94,7 +94,7 @@ def format_name(number):
 
 def push_home():
     now = datetime.now()
-    time_str = now.strftime("%H:%M")
+    time_str = now.strftime("%-I:%M %p")
     date_str = now.strftime("%a, %b %-d")
     with state['lock']:
         unread = sum(1 for m in state['messages'] if not m['read'])
