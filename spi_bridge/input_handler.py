@@ -53,6 +53,8 @@ class KeyboardHandler:
                 time.sleep(3)
         print(f"[keyboard] Using: {device.name} ({device.path})")
         try:
+            device.grab()  # take exclusive control before X11 can grab it
+            print("[keyboard] Device grabbed.")
             for event in device.read_loop():
                 if event.type == ecodes.EV_KEY:
                     key_event = categorize(event)
@@ -66,3 +68,8 @@ class KeyboardHandler:
                             self.on_key(keycode)
         except OSError:
             print("[keyboard] Device disconnected.")
+        finally:
+            try:
+                device.ungrab()
+            except Exception:
+                pass
