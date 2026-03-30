@@ -20,17 +20,20 @@ NAV_KEYS = {
 
 
 def find_keyboard():
-    """Return the first InputDevice that looks like a full keyboard."""
+    """Return the keyboard InputDevice with the most supported keys."""
+    candidates = []
     for path in evdev.list_devices():
         try:
             dev = InputDevice(path)
             caps = dev.capabilities()
             keys = caps.get(ecodes.EV_KEY, [])
-            # Require letter keys to distinguish full keyboard from HID control interfaces
             if ecodes.KEY_ENTER in keys and ecodes.KEY_UP in keys and ecodes.KEY_A in keys:
-                return dev
+                candidates.append((len(keys), dev))
         except Exception:
             pass
+    if candidates:
+        candidates.sort(key=lambda x: x[0], reverse=True)
+        return candidates[0][1]
     return None
 
 
