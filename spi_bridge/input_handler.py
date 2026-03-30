@@ -45,33 +45,35 @@ class KeyboardHandler:
         self._thread.start()
 
     def _run(self):
-        device = None
-        while device is None:
-            device = find_keyboard()
-            if device is None:
-                print("[keyboard] No keyboard found, retrying in 3s...")
-                time.sleep(3)
-        print(f"[keyboard] Using: {device.name} ({device.path})")
-        try:
-            device.grab()
-            print("[keyboard] Device grabbed (exclusive).")
-        except OSError as e:
-            print(f"[keyboard] Grab failed ({e}), reading anyway.")
-        try:
-            for event in device.read_loop():
-                if event.type == ecodes.EV_KEY:
-                    key_event = categorize(event)
-                    if key_event.keystate == key_event.key_down:
-                        keycode = key_event.keycode
-                        if isinstance(keycode, list):
-                            keycode = keycode[0]
-                        print(f"[keyboard] key: {keycode}")
-                        if keycode in NAV_KEYS:
-                            self.on_key(keycode)
-        except OSError:
-            print("[keyboard] Device disconnected.")
-        finally:
+        while True:
+            device = None
+            while device is None:
+                device = find_keyboard()
+                if device is None:
+                    print("[keyboard] No keyboard found, retrying in 3s...")
+                    time.sleep(3)
+            print(f"[keyboard] Using: {device.name} ({device.path})")
             try:
-                device.ungrab()
-            except Exception:
-                pass
+                device.grab()
+                print("[keyboard] Device grabbed (exclusive).")
+            except OSError as e:
+                print(f"[keyboard] Grab failed ({e}), reading anyway.")
+            try:
+                for event in device.read_loop():
+                    if event.type == ecodes.EV_KEY:
+                        key_event = categorize(event)
+                        if key_event.keystate == key_event.key_down:
+                            keycode = key_event.keycode
+                            if isinstance(keycode, list):
+                                keycode = keycode[0]
+                            print(f"[keyboard] key: {keycode}")
+                            if keycode in NAV_KEYS:
+                                self.on_key(keycode)
+            except OSError:
+                print("[keyboard] Device disconnected, reconnecting...")
+            finally:
+                try:
+                    device.ungrab()
+                except Exception:
+                    pass
+            time.sleep(1)
