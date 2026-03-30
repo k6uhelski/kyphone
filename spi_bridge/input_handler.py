@@ -53,14 +53,16 @@ class KeyboardHandler:
                 time.sleep(3)
         print(f"[keyboard] Using: {device.name} ({device.path})")
         try:
-            device.grab()  # take exclusive control before X11 can grab it
-            print("[keyboard] Device grabbed.")
+            device.grab()
+            print("[keyboard] Device grabbed (exclusive).")
+        except OSError as e:
+            print(f"[keyboard] Grab failed ({e}), reading anyway.")
+        try:
             for event in device.read_loop():
                 if event.type == ecodes.EV_KEY:
                     key_event = categorize(event)
                     if key_event.keystate == key_event.key_down:
                         keycode = key_event.keycode
-                        # evdev may return a list for aliased keys
                         if isinstance(keycode, list):
                             keycode = keycode[0]
                         print(f"[keyboard] key: {keycode}")
