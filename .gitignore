@@ -28,4 +28,5 @@ __pycache__/
 *.log
 .env
 *.tmp
+data/
 spi_bridge/tests/Signal_Detector_34.ino

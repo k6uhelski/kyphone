@@ -7,6 +7,7 @@ from datetime import datetime
 import spidev
 import gpiod
 from twilio.rest import Client
+from input_handler import KeyboardHandler
 
 # --- Twilio Config ---
 ACCOUNT_SID   = os.environ.get('TWILIO_SID')
@@ -63,6 +64,11 @@ state = {
     'last_sid': None,
     'last_sender': None,
     'lock': threading.Lock(),
+    'nav': {
+        'screen': 'HOME',    # HOME | MSG_LIST | MSG_THREAD
+        'selected': 0,       # selected index in MSG_LIST
+        'thread_sender': None,
+    },
 }
 
 
@@ -121,6 +127,16 @@ def format_name(number):
     return CONTACTS.get(number, number)
 
 
+def get_conversations():
+    """Return list of most-recent messages per sender, newest first (max 4)."""
+    with state['lock']:
+        seen = {}
+        for m in reversed(state['messages']):
+            if m['sender'] not in seen:
+                seen[m['sender']] = m
+    return list(seen.values())[:4]
+
+
 def push_home():
     now = datetime.now()
     time_str = now.strftime("%-I:%M %p")
@@ -136,30 +152,102 @@ def push_home():
     push_screen(f"HOME|{time_str}|{date_str}|{notif}")
 
 
-def push_msg_list():
-    with state['lock']:
-        # Deduplicate by sender, keep most recent
-        seen = {}
-        for m in reversed(state['messages']):
-            if m['sender'] not in seen:
-                seen[m['sender']] = m
-        entries = list(seen.values())[:4]  # max 4 entries
-
-    if not entries:
-        push_screen("MSG_LIST|No messages yet")
+def push_msg_list(selected=0):
+    conversations = get_conversations()
+    if not conversations:
+        push_screen("MSG_LIST|0|No messages yet")
         return
-
-    parts = []
-    for m in entries:
+    # Clamp selected to valid range
+    selected = max(0, min(selected, len(conversations) - 1))
+    parts = [str(selected)]
+    for m in conversations:
         name = m['name'][:10]
         preview = m['body'][:18]
         parts.append(f"{name}\xb7{preview}")  # middle dot separator
-
     push_screen("MSG_LIST|" + "|".join(parts))
+
+
+def push_msg_thread(sender):
+    """Push MSG_THREAD screen showing conversation with sender."""
+    with state['lock']:
+        thread = [m for m in state['messages'] if m['sender'] == sender]
+    name = format_name(sender)
+    parts = [name]
+    for m in thread[-5:]:  # last 5 messages
+        prefix = "You" if m['sender'] == TWILIO_NUMBER else ">"
+        parts.append(f"{prefix}: {m['body'][:22]}")
+    push_screen("MSG_THREAD|" + "|".join(parts))
 
 
 def push_sms(sender_name, body):
     push_screen(f"{sender_name}|{body}")
+
+
+# --- Navigation ---
+
+def navigate_to(screen, selected=0, thread_sender=None):
+    with state['lock']:
+        state['nav']['screen'] = screen
+        state['nav']['selected'] = selected
+        state['nav']['thread_sender'] = thread_sender
+
+    if screen == 'HOME':
+        push_home()
+    elif screen == 'MSG_LIST':
+        push_msg_list(selected)
+    elif screen == 'MSG_THREAD':
+        push_msg_thread(thread_sender)
+        # Mark messages from this sender as read
+        with state['lock']:
+            for m in state['messages']:
+                if m['sender'] == thread_sender:
+                    m['read'] = True
+        save_messages()
+
+
+def handle_key(keycode):
+    with state['lock']:
+        screen = state['nav']['screen']
+        selected = state['nav']['selected']
+        thread_sender = state['nav']['thread_sender']
+
+    conversations = get_conversations()
+
+    if screen == 'HOME':
+        if keycode == 'KEY_ENTER':
+            navigate_to('MSG_LIST', selected=0)
+
+    elif screen == 'MSG_LIST':
+        if keycode in ('KEY_DOWN', 'KEY_RIGHT'):
+            new_sel = min(selected + 1, max(0, len(conversations) - 1))
+            navigate_to('MSG_LIST', selected=new_sel)
+        elif keycode in ('KEY_UP', 'KEY_LEFT'):
+            new_sel = max(selected - 1, 0)
+            navigate_to('MSG_LIST', selected=new_sel)
+        elif keycode == 'KEY_ENTER':
+            if conversations and selected < len(conversations):
+                sender = conversations[selected]['sender']
+                navigate_to('MSG_THREAD', selected=selected, thread_sender=sender)
+        elif keycode in ('KEY_BACKSPACE', 'KEY_ESC'):
+            navigate_to('HOME')
+
+    elif screen == 'MSG_THREAD':
+        if keycode in ('KEY_BACKSPACE', 'KEY_ESC'):
+            navigate_to('MSG_LIST', selected=selected)
+
+
+def _restore_screen():
+    """Return to the current nav screen after an SMS interruption."""
+    with state['lock']:
+        screen = state['nav']['screen']
+        selected = state['nav']['selected']
+        thread_sender = state['nav']['thread_sender']
+    if screen == 'HOME':
+        push_home()
+    elif screen == 'MSG_LIST':
+        push_msg_list(selected)
+    elif screen == 'MSG_THREAD':
+        push_msg_thread(thread_sender)
 
 
 # --- Loops ---
@@ -197,9 +285,16 @@ def sms_loop():
                     })
                     save_messages()
                 print(f"\n[NEW SMS] {name}: {msg.body}")
-                push_sms(name, msg.body)
-                # Return to home after SMS_DISPLAY_DURATION seconds
-                threading.Timer(SMS_DISPLAY_DURATION, push_home).start()
+                with state['lock']:
+                    current_screen = state['nav']['screen']
+                    thread_sender = state['nav']['thread_sender']
+                if current_screen == 'MSG_THREAD' and thread_sender == msg.from_:
+                    # Already viewing this thread — refresh it in place
+                    push_msg_thread(msg.from_)
+                else:
+                    push_sms(name, msg.body)
+                    # Return to current nav screen after SMS_DISPLAY_DURATION seconds
+                    threading.Timer(SMS_DISPLAY_DURATION, _restore_screen).start()
                 break
         except Exception as e:
             print(f"Poll error: {e}")
@@ -238,6 +333,9 @@ def main():
     # Start background threads
     threading.Thread(target=clock_loop, daemon=True).start()
     threading.Thread(target=sms_loop, daemon=True).start()
+
+    # Start keyboard navigation
+    KeyboardHandler(handle_key).start()
 
     print("\n--- KyPhone OS ---")
     print(f"Number: {TWILIO_NUMBER}")

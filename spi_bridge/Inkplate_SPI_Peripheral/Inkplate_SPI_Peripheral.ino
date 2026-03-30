@@ -140,14 +140,16 @@ void render_home(char* data) {
     display.print(notif_str);
 }
 
-void render_msg_list(char* data) {
+void render_msg_list(char* data, int selected) {
     // data = "Name1·preview1|Name2·preview2|..."
+    // selected = index of highlighted row
     display.setTextSize(3);
     display.setCursor(20, 10);
     display.print("Messages");
     display.drawLine(0, 46, 600, 46, BLACK);
 
     int y = 60;
+    int row = 0;
     char* entry = data;
     while (entry != NULL && y < 560) {
         char* next = strchr(entry, '|');
@@ -160,15 +162,19 @@ void render_msg_list(char* data) {
             entry = NULL;
         }
 
-        // Split entry on middle dot (0xB7 in UTF-8 is 0xC2 0xB7, use ASCII · = 0xB7 raw)
+        bool is_selected = (row == selected);
+        if (is_selected) {
+            display.fillRect(0, y - 4, 600, 84, BLACK);
+            display.setTextColor(WHITE);
+        }
+
+        // Split entry on middle dot (0xB7 raw)
         char* dot = strchr(entry_buf, '\xB7');
         if (dot != NULL) {
             *dot = '\0';
-            // Name — bold (larger)
             display.setTextSize(3);
             display.setCursor(20, y);
             display.print(entry_buf);
-            // Preview — smaller, indented
             display.setTextSize(2);
             display.setCursor(20, y + 34);
             display.print(dot + 1);
@@ -178,8 +184,49 @@ void render_msg_list(char* data) {
             display.print(entry_buf);
         }
 
+        if (is_selected) {
+            display.setTextColor(BLACK);
+        }
+
+        row++;
         y += 90;
         display.drawLine(0, y - 6, 600, y - 6, BLACK);
+    }
+}
+
+void render_msg_thread(char* data) {
+    // data = "Name|msg1|msg2|..."
+    char name_buf[32] = "";
+    char* pipe = strchr(data, '|');
+    if (pipe != NULL) {
+        strncpy(name_buf, data, pipe - data);
+        data = pipe + 1;
+    } else {
+        strncpy(name_buf, data, sizeof(name_buf) - 1);
+        data = NULL;
+    }
+
+    // Header: sender name
+    display.setTextSize(3);
+    display.setCursor(20, 10);
+    display.print(name_buf);
+    display.drawLine(0, 46, 600, 46, BLACK);
+
+    int y = 60;
+    while (data != NULL && y < 560) {
+        char* next = strchr(data, '|');
+        char msg_buf[64] = "";
+        if (next != NULL) {
+            strncpy(msg_buf, data, next - data);
+            data = next + 1;
+        } else {
+            strncpy(msg_buf, data, sizeof(msg_buf) - 1);
+            data = NULL;
+        }
+        display.setTextSize(2);
+        display.setCursor(20, y);
+        display.print(msg_buf);
+        y += 30;
     }
 }
 
@@ -309,7 +356,19 @@ void loop() {
                 if (strncmp(text, "HOME|", 5) == 0) {
                     render_home(text + 5);
                 } else if (strncmp(text, "MSG_LIST|", 9) == 0) {
-                    render_msg_list(text + 9);
+                    // First token after MSG_LIST| is the selected index
+                    char* after = text + 9;
+                    int sel = 0;
+                    char* idx_end = strchr(after, '|');
+                    if (idx_end != NULL) {
+                        char idx_buf[4] = "";
+                        strncpy(idx_buf, after, idx_end - after);
+                        sel = atoi(idx_buf);
+                        after = idx_end + 1;
+                    }
+                    render_msg_list(after, sel);
+                } else if (strncmp(text, "MSG_THREAD|", 11) == 0) {
+                    render_msg_thread(text + 11);
                 } else {
                     render_sms(text);
                 }
