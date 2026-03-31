@@ -82,7 +82,7 @@ state = {
         'screen': 'HOME',    # HOME | MSG_LIST | MSG_THREAD
         'selected': 0,       # selected index in MSG_LIST
         'thread_sender': None,
-        'home_sel': False,   # YAP button selected on home screen
+        'home_sel': -1,      # selected home button: -1=none 0=TEXT 1=CALL 2=READ 3=LISTEN
     },
 }
 
@@ -170,8 +170,7 @@ def push_home():
         notif = f"{unread} new messages"
     else:
         notif = ""
-    sel = "1" if home_sel else "0"
-    push_screen(f"HOME|{time_str}|{date_str}|{notif}|{sel}")
+    push_screen(f"HOME|{time_str}|{date_str}|{notif}|{home_sel}")
 
 
 def push_msg_list(selected=0):
@@ -212,7 +211,7 @@ def navigate_to(screen, selected=0, thread_sender=None):
         state['nav']['screen'] = screen
         state['nav']['selected'] = selected
         state['nav']['thread_sender'] = thread_sender
-        state['nav']['home_sel'] = False
+        state['nav']['home_sel'] = -1
 
     if screen == 'HOME':
         push_home()
@@ -237,18 +236,24 @@ def handle_key(keycode):
     conversations = get_conversations()
 
     if screen == 'HOME':
-        if keycode == 'KEY_DOWN':
+        if keycode == 'KEY_UP':
             with state['lock']:
-                state['nav']['home_sel'] = True
+                state['nav']['home_sel'] = -1
             push_home()
-        elif keycode == 'KEY_UP':
+        elif keycode == 'KEY_LEFT':
             with state['lock']:
-                state['nav']['home_sel'] = False
+                cur = state['nav']['home_sel']
+                state['nav']['home_sel'] = (cur - 1) % 4 if cur >= 0 else 3
+            push_home()
+        elif keycode in ('KEY_RIGHT', 'KEY_DOWN'):
+            with state['lock']:
+                cur = state['nav']['home_sel']
+                state['nav']['home_sel'] = (cur + 1) % 4 if cur >= 0 else 0
             push_home()
         elif keycode == 'KEY_ENTER':
             with state['lock']:
                 home_sel = state['nav']['home_sel']
-            if home_sel:
+            if home_sel == 0:  # TEXT
                 navigate_to('MSG_LIST', selected=0)
 
     elif screen == 'MSG_LIST':
@@ -300,8 +305,7 @@ def push_clock_tick():
         notif = f"{unread} new messages"
     else:
         notif = ""
-    sel = "1" if home_sel else "0"
-    push_screen(f"HOME_FAST|{time_str}|{date_str}|{notif}|{sel}")
+    push_screen(f"HOME_FAST|{time_str}|{date_str}|{notif}|{home_sel}")
 
 
 def clock_loop():

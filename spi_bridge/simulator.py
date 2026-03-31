@@ -140,16 +140,19 @@ class Simulator:
         time_str  = parts[0] if len(parts) > 0 else ''
         date_str  = parts[1] if len(parts) > 1 else ''
         notif_str = parts[2] if len(parts) > 2 else ''
-        yap_sel   = (parts[3] == '1') if len(parts) > 3 else False
+        try:
+            home_sel = int(parts[3]) if len(parts) > 3 else -1
+        except ValueError:
+            home_sel = -1
         has_notif = len(notif_str) > 0
 
         # Status bar
         self._text('KyPhone', 10, 8, 2)
         self._line(34)
 
-        # Clock + date vertically centered in remaining space (y=35..600)
+        # Clock + date vertically centered in space above button row (y=35..510)
         total_h = 80 + 24 + 24
-        start_y = 35 + (565 - total_h) // 2
+        start_y = 35 + (475 - total_h) // 2
 
         self._text_centered(time_str, start_y, 10)
         self._text_centered(date_str, start_y + 80 + 24, 3)
@@ -159,14 +162,32 @@ class Simulator:
             self._line(notif_y)
             self._text(notif_str, 20, notif_y + 10, 3)
 
-        # YAP button — bottom left
-        yap_cx, yap_cy, yap_r = 80, 545, 50
-        if yap_sel:
-            pygame.draw.circle(self._surface, BLACK, (yap_cx, yap_cy), yap_r)
-            self._text('YAP', yap_cx - 27, yap_cy - 12, 3, WHITE)
-        else:
-            pygame.draw.circle(self._surface, BLACK, (yap_cx, yap_cy), yap_r, 2)
-            self._text('YAP', yap_cx - 27, yap_cy - 12, 3, BLACK)
+        # YAP / CHILL bracket labels
+        # YAP over left half (0–300), CHILL over right half (300–600)
+        yap_w = len('YAP') * self._char_w(2)
+        chill_w = len('CHILL') * self._char_w(2)
+        self._text('YAP',   (150 - yap_w // 2),   504, 2)
+        self._text('CHILL', (450 - chill_w // 2),  504, 2)
+
+        # Bracket lines
+        for lx, rx in [(10, 290), (310, 590)]:
+            pygame.draw.lines(self._surface, BLACK, False,
+                              [(lx, 522), (lx, 518), (rx, 518), (rx, 522)], 1)
+
+        # 4 buttons
+        buttons = ['TEXT', 'CALL', 'READ', 'LISTEN']
+        btn_w, btn_h, btn_y = 150, 65, 528
+        for i, label in enumerate(buttons):
+            bx = i * btn_w
+            cw = len(label) * self._char_w(2)
+            lx = bx + (btn_w - cw) // 2
+            ly = btn_y + (btn_h - 16) // 2
+            if i == home_sel and home_sel >= 0:
+                pygame.draw.rect(self._surface, BLACK, (bx, btn_y, btn_w, btn_h))
+                self._text(label, lx, ly, 2, WHITE)
+            else:
+                pygame.draw.rect(self._surface, BLACK, (bx, btn_y, btn_w, btn_h), 2)
+                self._text(label, lx, ly, 2, BLACK)
 
     def _draw_msg_list(self, data):
         parts = data.split('|')
