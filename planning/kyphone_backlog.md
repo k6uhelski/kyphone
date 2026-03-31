@@ -1,28 +1,35 @@
 # KyPhone Project Backlog
-*Created: March 3, 2026*
+*Updated: March 30, 2026*
 
-## Phase 1: Hardware Bridge (Current Focus)
-- [ ] **Verify SPI communication** between Radxa (Controller) and Inkplate (Peripheral).
-- [ ] **Implement Hardware Handshake** (RTS Pin) if polling fails or hangs.
-- [ ] **Resolve GPIO conflicts** with Touch Controller/SD Card on Pins 13/14.
-- [ ] **Stabilize Power**: Ensure common ground and clean power delivery to both boards.
+## In Progress
+- [ ] Improve messaging flow (compose screen, reply, thread UX)
 
-## Phase 2: Display & Input Optimization
-- [ ] **Touch Calibration**: Map Inkplate raw coordinates to Radxa screen pixels.
-- [ ] **Display Scaling**: Refine 600x600 image processing for centering and clarity.
-- [ ] **Differential Updates**: Implement "diffing" to send only changed pixels over SPI.
-- [ ] **Partial Refresh**: Update Inkplate firmware to draw only modified regions (flicker-free).
+## Messaging
+- [ ] Compose screen — type and send a new message (fake send until 10DLC clears)
+- [ ] Reply from MSG_THREAD screen
+- [ ] Contacts — JSON file mapping phone numbers → names
+- [ ] Address book screen — browse and select contacts
+- [ ] Check 10DLC campaign registration (Twilio console → Messaging → Regulatory Compliance)
 
-## Phase 3: OS & UI Framework
-- [ ] **OS Selection**: Finalize between AOSP (Android) or a minimal Linux build (Radxa).
-- [ ] **UI Rendering**: Choose a framework (Qt, Flutter, or Custom Python/C++).
-- [ ] **Input Driver**: Write a kernel-level or user-space driver to treat SPI touch as a standard input device.
+## Home Screen
+- [ ] Update Inkplate firmware with new 4-button layout (TEXT/CALL/READ/LISTEN + YAP/CHILL)
+- [ ] Notification badge or indicator for unread messages
 
-## Phase 4: Core Phone Functionality
-- [ ] **Modem Integration**: Connect LTE/5G module to Radxa via USB or Serial.
-- [ ] **Telephony Stack**: Implement Call/SMS handling logic.
-- [ ] **Audio Path**: Integrate I2S/USB audio for speaker and microphone.
+## CHILL Apps
+- [ ] READ: txt/epub parser + paginator on Radxa, page navigation on screen
+- [ ] LISTEN: local MP3 playback via Radxa, track info + controls on screen
+- [ ] Spotify Web API integration (requires Premium, OAuth on Radxa)
 
-## Phase 5: Final Assembly
-- [ ] **Power Management**: Integrate LiPo battery, charging circuit, and fuel gauge.
-- [ ] **Enclosure**: 3D design and print a handheld chassis for all components.
+## Architecture
+- [ ] App runtime — modular app interface so new apps don't require core rewrites
+- [ ] CALL placeholder screen
+
+## Hardware (deferred until mobile-ready)
+- [ ] BlackBerry Q10 keyboard — ordered, arriving May
+- [ ] Quectel EC25-AF cellular modem + SuperPLUS mini PCIe to USB adapter
+- [ ] SIM card (Mint Mobile or Tello)
+- [ ] Battery + enclosure
+
+## Polish
+- [ ] Bitmap icon system (1-bit, Adafruit GFX byte arrays)
+- [ ] Font/layout refinements informed by Dieter Rams / early Mac aesthetic

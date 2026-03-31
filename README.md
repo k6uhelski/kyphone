@@ -4,29 +4,33 @@ KyPhone is a minimal phone designed to revolt against the attention economy. It 
 
 ---
 
-## **Current Status (March 23, 2026)**
+## **Current Status (March 30, 2026)**
 
-The SPI communication layer between the Radxa and the Inkplate is fully proven and production-ready. Text pushed from the Radxa appears on the E-ink screen in **~1.7 seconds**, reliably, 5/5 consecutive sends.
+KyPhoneOS is running on hardware. The Radxa polls for SMS, renders a full navigation UI on the Inkplate, and persists conversations across reboots. Local development runs on Mac via a pygame simulator — no hardware needed to iterate on UI.
 
 ### **What works today**
-- **Reliable SPI transport:** Radxa → Inkplate over 3-wire software SPI + handshake. 128-byte payload, 5kHz clock.
-- **1.7s end-to-end latency:** 204ms transfer + 500ms framing timeout + 1.1s E-ink refresh.
-- **Two-way handshake:** Yellow wire (P1-0 expander) signals Inkplate ready/busy. Python blocks on it correctly.
-- **SMS display layout:** Firmware parses `SENDER|body` format and renders sender + message in two lines.
-- **Test suite:** `timing_baseline.py` (measures latency) and `timing_test.py` (asserts 5/5 pass) in `spi_bridge/tests/`.
+- **Reliable SPI transport:** Radxa → Inkplate over 3-wire software SPI + handshake. 128-byte payload, 5kHz clock. 1.7s end-to-end latency.
+- **Full navigation UI:** HOME → MSG_LIST → MSG_THREAD. Keyboard navigation via evdev (USB keyboard on Radxa).
+- **Live SMS via Twilio:** Inbound messages appear on screen in ~2 seconds. Read state and conversation history persisted to disk.
+- **Pygame simulator:** Run `python3 spi_bridge/kyphone_app.py --sim` on Mac to develop UI without hardware.
+- **Partial clock updates:** Clock refreshes every minute with `partialUpdate()` — no full E-ink flash.
 
-### **Next Milestone: Live SMS Demo**
-Two-way SMS via Twilio — friends text a real phone number, message appears on E-ink in ~2 seconds, replies sent from Radxa terminal. See `spi_bridge/kyphone_sms.py`.
+### **Running it**
+```
+# On Radxa (hardware)
+export TWILIO_SID=... TWILIO_TOKEN=... TWILIO_NUMBER=...
+python3 spi_bridge/kyphone_app.py
 
-**Setup required:**
-1. Twilio account + phone number (~$1/month)
-2. On Radxa: `pip install twilio`
-3. Set env vars: `TWILIO_SID`, `TWILIO_TOKEN`, `TWILIO_NUMBER`
-4. Run: `python3 spi_bridge/kyphone_sms.py`
+# On Mac (simulator)
+pip3 install twilio pygame
+export TWILIO_SID=... TWILIO_TOKEN=... TWILIO_NUMBER=...
+python3 spi_bridge/kyphone_app.py --sim
+```
 
-### **Hardware roadmap**
-- Quectel EC25-AF cellular modem (USB + M.2 Key-B enclosure) — ordered, for native SMS without Twilio
-- Physical keyboard — required for production reply input (Radxa touchscreen is unreliable for text input)
+### **What's next**
+- Improve messaging flow (compose, reply, contacts)
+- CALL / READ / LISTEN screen placeholders → real implementations
+- Physical BlackBerry Q10 keyboard arriving May
 
 ---
 
@@ -110,6 +114,25 @@ Bash
 ---
 
 ## **Development Log**
+
+### **March 30, 2026: KyPhoneOS — Full SMS App Running on Hardware**
+
+The SPI transport is now a solved problem. This session was entirely product: a full phone OS running on the Radxa, pushing semantic screen commands to the Inkplate over the proven SPI bridge.
+
+**What got built:**
+- **KyPhone OS app** (`kyphone_app.py`): Replaces the old test scripts. Polls Twilio every 2 seconds for inbound SMS, manages navigation state, and pushes screen updates to the Inkplate in real time.
+- **Navigation state machine:** Three screens — HOME, MSG_LIST, MSG_THREAD — with full keyboard navigation via evdev. Arrow keys + Enter move between screens; messages mark as read when opened.
+- **Message persistence:** Conversations saved to `data/messages.json` on disk. Survive reboots. SID tracking prevents replaying old messages on startup.
+- **Partial clock updates:** Home screen refreshes the clock every minute using `HOME_FAST` + `partialUpdate()` instead of a full E-ink flash. Noticeably faster.
+- **Pygame simulator:** Added `--sim` flag to run the full app locally on Mac — no Inkplate or Radxa needed. A 600x600 pygame window mimics the display layout exactly, dramatically accelerating UI development and iteration.
+- **Home screen redesign:** Replaced the single YAP circle button with a 4-button row — TEXT, CALL, READ, LISTEN — grouped under YAP (communication) and CHILL (media) labels. LEFT/RIGHT navigate, ENTER activates.
+
+**Key decisions:**
+- Twilio for SMS instead of a modem for now. 10DLC campaign registration submitted for the KyPhone number — pending approval before outbound replies work reliably.
+- BlackBerry Q10 keyboard ordered (white BLE+USB, AliExpress, ~$74) for physical input. Arriving May. Until then, USB keyboard or simulator.
+- Cellular modem deferred until the device has a battery and enclosure.
+
+---
 
 ### **March 23, 2026: SPI Transport Proven — "hello world" on E-ink**
 
