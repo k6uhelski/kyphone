@@ -54,16 +54,20 @@ class Simulator:
         self._lock = threading.Lock()
         self._pending = None
         self._surface = None
+        self._ready = False
 
     def init(self):
         pygame.init()
         self._surface = pygame.display.set_mode((self.WIDTH, self.HEIGHT))
+        self._ready = True
         pygame.display.set_caption('KyPhone Simulator')
         self._surface.fill(WHITE)
         pygame.display.flip()
 
     def render(self, command):
         """Queue a screen command for rendering (thread-safe)."""
+        if not self._ready:
+            return
         with self._lock:
             self._pending = command
         pygame.event.post(pygame.event.Event(pygame.USEREVENT))

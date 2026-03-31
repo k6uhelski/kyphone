@@ -306,6 +306,9 @@ def push_clock_tick():
 
 def clock_loop():
     """Push full home screen on start, then partial clock tick every minute."""
+    if SIM_MODE:
+        while simulator is None or not simulator._ready:
+            time.sleep(0.05)
     push_home()  # full refresh to set layout
     while state['running']:
         time.sleep(CLOCK_UPDATE_INTERVAL)
