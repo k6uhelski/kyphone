@@ -4,10 +4,15 @@ import time
 import json
 import threading
 from datetime import datetime
-import spidev
-import gpiod
+
+SIM_MODE = '--sim' in sys.argv
+
+if not SIM_MODE:
+    import spidev
+    import gpiod
+    from input_handler import KeyboardHandler
+
 from twilio.rest import Client
-from input_handler import KeyboardHandler
 
 # --- Twilio Config ---
 ACCOUNT_SID   = os.environ.get('TWILIO_SID')
@@ -15,8 +20,11 @@ AUTH_TOKEN    = os.environ.get('TWILIO_TOKEN')
 TWILIO_NUMBER = os.environ.get('TWILIO_NUMBER')
 
 if not all([ACCOUNT_SID, AUTH_TOKEN, TWILIO_NUMBER]):
-    print("Error: set TWILIO_SID, TWILIO_TOKEN, and TWILIO_NUMBER env vars.")
-    sys.exit(1)
+    if SIM_MODE:
+        print("Warning: Twilio env vars not set — SMS polling disabled in sim mode.")
+    else:
+        print("Error: set TWILIO_SID, TWILIO_TOKEN, and TWILIO_NUMBER env vars.")
+        sys.exit(1)
 
 # --- Contacts ---
 CONTACTS = {
@@ -39,22 +47,28 @@ SMS_POLL_INTERVAL = 2       # seconds between Twilio polls
 DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'data')
 MESSAGES_FILE = os.path.join(DATA_DIR, 'messages.json')
 
-# --- Init SPI ---
-chip = gpiod.Chip(CHIP)
-handshake = chip.get_line(HANDSHAKE_LINE)
-handshake.request(consumer='kyphone-app', type=gpiod.LINE_REQ_DIR_IN)
+# --- Init SPI + Twilio (hardware mode only) ---
+if not SIM_MODE:
+    chip = gpiod.Chip(CHIP)
+    handshake = chip.get_line(HANDSHAKE_LINE)
+    handshake.request(consumer='kyphone-app', type=gpiod.LINE_REQ_DIR_IN)
 
-spi = spidev.SpiDev()
-try:
-    spi.open(SPI_BUS, SPI_DEV)
-except FileNotFoundError:
-    print(f"Error: /dev/spidev{SPI_BUS}.{SPI_DEV} not found.")
-    sys.exit(1)
-spi.max_speed_hz = SPI_SPEED_HZ
-spi.mode = 0
+    spi = spidev.SpiDev()
+    try:
+        spi.open(SPI_BUS, SPI_DEV)
+    except FileNotFoundError:
+        print(f"Error: /dev/spidev{SPI_BUS}.{SPI_DEV} not found.")
+        sys.exit(1)
+    spi.max_speed_hz = SPI_SPEED_HZ
+    spi.mode = 0
 
-# --- Init Twilio ---
-client = Client(ACCOUNT_SID, AUTH_TOKEN)
+client = Client(ACCOUNT_SID, AUTH_TOKEN) if all([ACCOUNT_SID, AUTH_TOKEN, TWILIO_NUMBER]) else None
+
+# --- Simulator (sim mode only) ---
+simulator = None
+if SIM_MODE:
+    from simulator import Simulator
+    simulator = Simulator(lambda keycode: handle_key(keycode))
 
 
 # --- State ---
@@ -100,6 +114,8 @@ def save_messages():
 # --- SPI Helpers ---
 
 def wait_for_ready(timeout_s=10):
+    if SIM_MODE:
+        return True
     t0 = time.monotonic()
     while int(handshake.get_value()) == 0:
         if time.monotonic() - t0 > timeout_s:
@@ -115,11 +131,14 @@ def build_payload(text):
 
 
 def push_screen(command):
+    print(f"  → screen: {command[:60]}")
+    if SIM_MODE:
+        simulator.render(command)
+        return
     if not wait_for_ready():
         print(f"Warning: Inkplate not ready, skipping: {command[:40]}")
         return
     spi.xfer2(build_payload(command))
-    print(f"  → screen: {command[:60]}")
 
 
 # --- Screen Builders ---
@@ -299,6 +318,9 @@ def clock_loop():
 
 def sms_loop():
     """Poll Twilio for new inbound SMS."""
+    if client is None:
+        print("SMS polling disabled (no Twilio credentials).")
+        return
     print(f"Polling for SMS every {SMS_POLL_INTERVAL}s...")
     while state['running']:
         try:
@@ -371,18 +393,21 @@ def main():
     threading.Thread(target=sms_loop, daemon=True).start()
 
     # Start keyboard navigation
-    KeyboardHandler(handle_key).start()
+    if not SIM_MODE:
+        KeyboardHandler(handle_key).start()
 
     print("\n--- KyPhone OS ---")
-    print(f"Number: {TWILIO_NUMBER}")
-
-    # If running interactively (terminal attached), enable reply prompt
-    interactive = sys.stdin.isatty()
-    if interactive:
-        print("Type replies below. 'msgs' to see message list. 'home' for home screen. 'exit' to quit.\n")
+    if TWILIO_NUMBER:
+        print(f"Number: {TWILIO_NUMBER}")
+    if SIM_MODE:
+        print("Running in simulator mode. Use arrow keys + Enter to navigate.")
 
     try:
-        if interactive:
+        if SIM_MODE:
+            simulator.init()
+            simulator.run_loop()  # blocks — pygame event loop on main thread
+        elif sys.stdin.isatty():
+            print("Type replies below. 'msgs' to see message list. 'home' for home screen. 'exit' to quit.\n")
             while True:
                 reply = input("KyPhone> ").strip()
                 if reply.lower() in ('exit', 'quit'):
@@ -401,15 +426,15 @@ def main():
                     else:
                         send_reply(last_sender, reply)
         else:
-            # Running as systemd service — just keep alive
             while state['running']:
                 time.sleep(1)
     except KeyboardInterrupt:
         pass
     finally:
         state['running'] = False
-        spi.close()
-        handshake.release()
+        if not SIM_MODE:
+            spi.close()
+            handshake.release()
         print("\nExiting.")
 
 
