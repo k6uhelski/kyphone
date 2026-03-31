@@ -253,10 +253,19 @@ def _restore_screen():
 # --- Loops ---
 
 def push_clock_tick():
-    """Partial update — just the time, no full redraw."""
+    """Push full home layout but request partial update for faster refresh."""
     now = datetime.now()
     time_str = now.strftime("%-I:%M %p")
-    push_screen(f"HOME_TICK|{time_str}")
+    date_str = now.strftime("%a, %b %-d")
+    with state['lock']:
+        unread = sum(1 for m in state['messages'] if not m['read'])
+    if unread == 0:
+        notif = "No new messages"
+    elif unread == 1:
+        notif = "1 new message"
+    else:
+        notif = f"{unread} new messages"
+    push_screen(f"HOME_FAST|{time_str}|{date_str}|{notif}")
 
 
 def clock_loop():

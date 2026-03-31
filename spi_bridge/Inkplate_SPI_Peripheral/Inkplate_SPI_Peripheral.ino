@@ -230,14 +230,6 @@ void render_msg_thread(char* data) {
     }
 }
 
-void render_clock_tick(char* time_str) {
-    // Erase only the clock region and redraw, then partial update
-    display.fillRect(0, 55, 600, 110, WHITE);
-    display.setTextSize(10);
-    display.setCursor(30, 60);
-    display.print(time_str);
-}
-
 void render_sms(char* text) {
     // "SENDER|body" — two-line SMS format
     char* pipe = strchr(text, '|');
@@ -359,9 +351,10 @@ void loop() {
                 char* text = (char*)&local_buf[offset+1];
                 Serial.printf("SUCCESS! MSG: %s\n", text);
 
-                if (strncmp(text, "HOME_TICK|", 10) == 0) {
-                    // Partial update — do NOT clearDisplay, do NOT call display()
-                    render_clock_tick(text + 10);
+                if (strncmp(text, "HOME_FAST|", 10) == 0) {
+                    // Full layout, partial refresh — faster clock tick with no flash
+                    display.clearDisplay();
+                    render_home(text + 10);
                     display.partialUpdate();
                     delay(100);
                     display.einkOff();
