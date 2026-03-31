@@ -113,39 +113,34 @@ void render_home(char* data) {
 
     bool has_notif = strlen(notif_str) > 0;
 
-    if (!has_notif) {
-        // Clean centered layout — clock + date vertically centered in 600x600
-        // Clock: textSize 10 = ~80px tall. Date: textSize 3 = ~24px tall. Gap: 24px.
-        int total_h = 80 + 24 + 24;
-        int start_y = (600 - total_h) / 2;
+    // Status bar — always shown
+    display.setTextSize(2);
+    display.setCursor(10, 8);
+    display.print("KyPhone");
+    display.drawLine(0, 34, 600, 34, BLACK);
 
-        display.setTextSize(10);
-        display.setCursor(30, start_y);
-        display.print(time_str);
+    // Clock + date vertically centered in remaining space (y=35 to y=600)
+    // Clock: textSize 10 = ~80px tall. Date: textSize 3 = ~24px tall. Gap: 24px.
+    int total_h = 80 + 24 + 24;
+    int start_y = 35 + (565 - total_h) / 2;
 
+    // Clock — horizontally centered (60px per char at textSize 10)
+    display.setTextSize(10);
+    int clock_w = strlen(time_str) * 60;
+    display.setCursor((600 - clock_w) / 2, start_y);
+    display.print(time_str);
+
+    // Date — horizontally centered (18px per char at textSize 3)
+    display.setTextSize(3);
+    int date_w = strlen(date_str) * 18;
+    display.setCursor((600 - date_w) / 2, start_y + 80 + 24);
+    display.print(date_str);
+
+    // Notification — only shown if unread messages
+    if (has_notif) {
+        display.drawLine(0, start_y + 80 + 24 + 40, 600, start_y + 80 + 24 + 40, BLACK);
         display.setTextSize(3);
-        int date_w = strlen(date_str) * 18;
-        display.setCursor((600 - date_w) / 2, start_y + 80 + 24);
-        display.print(date_str);
-    } else {
-        // Layout with notification — status bar + clock + date + divider + notif
-        display.setTextSize(2);
-        display.setCursor(10, 8);
-        display.print("KyPhone");
-        display.drawLine(0, 34, 600, 34, BLACK);
-
-        display.setTextSize(10);
-        display.setCursor(30, 60);
-        display.print(time_str);
-
-        display.setTextSize(3);
-        int date_w = strlen(date_str) * 18;
-        display.setCursor((600 - date_w) / 2, 200);
-        display.print(date_str);
-
-        display.drawLine(0, 260, 600, 260, BLACK);
-        display.setTextSize(3);
-        display.setCursor(20, 290);
+        display.setCursor(20, start_y + 80 + 24 + 50);
         display.print(notif_str);
     }
 }
