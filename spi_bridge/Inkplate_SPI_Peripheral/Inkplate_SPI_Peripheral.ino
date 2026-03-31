@@ -97,13 +97,21 @@ void render_home(char* data) {
     char date_str[32] = "";
     char notif_str[32] = "";
 
+    bool yap_selected = false;
+
     char* p1 = strchr(data, '|');
     if (p1 != NULL) {
         strncpy(time_str, data, p1 - data);
         char* p2 = strchr(p1 + 1, '|');
         if (p2 != NULL) {
             strncpy(date_str, p1 + 1, p2 - p1 - 1);
-            strncpy(notif_str, p2 + 1, sizeof(notif_str) - 1);
+            char* p3 = strchr(p2 + 1, '|');
+            if (p3 != NULL) {
+                strncpy(notif_str, p2 + 1, p3 - p2 - 1);
+                yap_selected = (*(p3 + 1) == '1');
+            } else {
+                strncpy(notif_str, p2 + 1, sizeof(notif_str) - 1);
+            }
         } else {
             strncpy(date_str, p1 + 1, sizeof(date_str) - 1);
         }
@@ -143,6 +151,20 @@ void render_home(char* data) {
         display.setCursor(20, start_y + 80 + 24 + 50);
         display.print(notif_str);
     }
+
+    // YAP button — bottom left
+    int yap_cx = 80, yap_cy = 545, yap_r = 50;
+    if (yap_selected) {
+        display.fillCircle(yap_cx, yap_cy, yap_r, BLACK);
+        display.setTextColor(WHITE);
+    } else {
+        display.drawCircle(yap_cx, yap_cy, yap_r, BLACK);
+        display.setTextColor(BLACK);
+    }
+    display.setTextSize(3);
+    display.setCursor(yap_cx - 27, yap_cy - 12);
+    display.print("YAP");
+    display.setTextColor(BLACK); // reset
 }
 
 void render_msg_list(char* data, int selected) {
