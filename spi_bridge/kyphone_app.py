@@ -143,12 +143,12 @@ def push_home():
     date_str = now.strftime("%a, %b %-d")
     with state['lock']:
         unread = sum(1 for m in state['messages'] if not m['read'])
-    if unread == 0:
-        notif = "No new messages"
-    elif unread == 1:
+    if unread == 1:
         notif = "1 new message"
-    else:
+    elif unread > 1:
         notif = f"{unread} new messages"
+    else:
+        notif = ""
     push_screen(f"HOME|{time_str}|{date_str}|{notif}")
 
 
@@ -259,12 +259,12 @@ def push_clock_tick():
     date_str = now.strftime("%a, %b %-d")
     with state['lock']:
         unread = sum(1 for m in state['messages'] if not m['read'])
-    if unread == 0:
-        notif = "No new messages"
-    elif unread == 1:
+    if unread == 1:
         notif = "1 new message"
-    else:
+    elif unread > 1:
         notif = f"{unread} new messages"
+    else:
+        notif = ""
     push_screen(f"HOME_FAST|{time_str}|{date_str}|{notif}")
 
 

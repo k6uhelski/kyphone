@@ -131,13 +131,13 @@ void render_home(char* data) {
     display.setCursor((600 - date_w) / 2, 200);
     display.print(date_str);
 
-    // Divider
-    display.drawLine(0, 260, 600, 260, BLACK);
-
-    // Notification summary
-    display.setTextSize(3);
-    display.setCursor(20, 290);
-    display.print(notif_str);
+    // Divider + notification — only shown if there are unread messages
+    if (strlen(notif_str) > 0) {
+        display.drawLine(0, 260, 600, 260, BLACK);
+        display.setTextSize(3);
+        display.setCursor(20, 290);
+        display.print(notif_str);
+    }
 }
 
 void render_msg_list(char* data, int selected) {
