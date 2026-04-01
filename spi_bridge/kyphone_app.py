@@ -164,13 +164,7 @@ def push_home():
     with state['lock']:
         unread = sum(1 for m in state['messages'] if not m['read'])
         home_sel = state['nav']['home_sel']
-    if unread == 1:
-        notif = "1 new message"
-    elif unread > 1:
-        notif = f"{unread} new messages"
-    else:
-        notif = ""
-    push_screen(f"HOME|{time_str}|{date_str}|{notif}|{home_sel}")
+    push_screen(f"HOME|{time_str}|{date_str}|{unread}|{home_sel}")
 
 
 def push_msg_list(selected=0):
@@ -299,13 +293,7 @@ def push_clock_tick():
     with state['lock']:
         unread = sum(1 for m in state['messages'] if not m['read'])
         home_sel = state['nav']['home_sel']
-    if unread == 1:
-        notif = "1 new message"
-    elif unread > 1:
-        notif = f"{unread} new messages"
-    else:
-        notif = ""
-    push_screen(f"HOME_FAST|{time_str}|{date_str}|{notif}|{home_sel}")
+    push_screen(f"HOME_FAST|{time_str}|{date_str}|{unread}|{home_sel}")
 
 
 def clock_loop():
@@ -354,12 +342,9 @@ def sms_loop():
                     current_screen = state['nav']['screen']
                     thread_sender = state['nav']['thread_sender']
                 if current_screen == 'MSG_THREAD' and thread_sender == msg.from_:
-                    # Already viewing this thread — refresh it in place
                     push_msg_thread(msg.from_)
                 else:
-                    push_sms(name, msg.body)
-                    # Return to current nav screen after SMS_DISPLAY_DURATION seconds
-                    threading.Timer(SMS_DISPLAY_DURATION, _restore_screen).start()
+                    _restore_screen()  # silently refresh current screen with updated badge
                 break
         except Exception as e:
             print(f"Poll error: {e}")

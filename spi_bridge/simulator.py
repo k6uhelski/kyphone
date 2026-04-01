@@ -16,13 +16,16 @@ import pygame
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
 
+CLOCK_FONT = 'futura'  # swap this to try other fonts
+
 _FONT_CACHE = {}
 
 
-def _get_font(px_size, bold=False):
-    key = (px_size, bold)
+def _get_font(px_size, bold=False, clock=False):
+    key = (px_size, bold, clock)
     if key not in _FONT_CACHE:
-        _FONT_CACHE[key] = pygame.font.SysFont('courier', px_size, bold=bold)
+        name = CLOCK_FONT if clock else 'courier'
+        _FONT_CACHE[key] = pygame.font.SysFont(name, px_size, bold=False)
     return _FONT_CACHE[key]
 
 
@@ -107,10 +110,16 @@ class Simulator:
         img = font.render(str(text), True, color)
         self._surface.blit(img, (x, y))
 
-    def _text_centered(self, text, y, text_size, color=BLACK):
-        w = len(str(text)) * self._char_w(text_size)
-        x = (self.WIDTH - w) // 2
-        self._text(text, x, y, text_size, color)
+    def _text_centered(self, text, y, text_size, color=BLACK, clock=False):
+        if clock:
+            font = _get_font(text_size * 8, bold=True, clock=True)
+            w = font.size(str(text))[0]
+            x = (self.WIDTH - w) // 2
+            self._surface.blit(font.render(str(text), True, color), (x, y))
+        else:
+            w = len(str(text)) * self._char_w(text_size)
+            x = (self.WIDTH - w) // 2
+            self._text(text, x, y, text_size, color)
 
     def _line(self, y):
         pygame.draw.line(self._surface, BLACK, (0, y), (self.WIDTH, y), 1)
@@ -139,55 +148,71 @@ class Simulator:
         parts = data.split('|')
         time_str  = parts[0] if len(parts) > 0 else ''
         date_str  = parts[1] if len(parts) > 1 else ''
-        notif_str = parts[2] if len(parts) > 2 else ''
+        try:
+            unread = int(parts[2]) if len(parts) > 2 else 0
+        except ValueError:
+            unread = 0
         try:
             home_sel = int(parts[3]) if len(parts) > 3 else -1
         except ValueError:
             home_sel = -1
-        has_notif = len(notif_str) > 0
 
         # Status bar
         self._text('KyPhone', 10, 8, 2)
-        self._line(34)
 
         # Clock + date vertically centered in space above button row (y=35..510)
         total_h = 80 + 24 + 24
         start_y = 35 + (475 - total_h) // 2
 
-        self._text_centered(time_str, start_y, 10)
+        self._text_centered(time_str, start_y, 10, clock=True)
         self._text_centered(date_str, start_y + 80 + 24, 3)
 
-        if has_notif:
-            notif_y = start_y + 80 + 24 + 40
-            self._line(notif_y)
-            self._text(notif_str, 20, notif_y + 10, 3)
+        # YAP / CHILL inline labels — YAP spans TEXT+CALL, CHILL spans READ+LISTEN
+        # btn_positions = [0, 150, 308, 458], btn_w = 142
+        yap_rx   = 150 + 142   # right edge of CALL = 292
+        chill_lx = 308          # left edge of READ
+        line_y = 526
+        pad = 4
+        for label, lx, rx in [('YAP', 0, yap_rx), ('CHILL', chill_lx, 599)]:
+            font = _get_font(11)
+            lw = font.size(label)[0]
+            label_x = lx + (rx - lx - lw) // 2
+            label_y = line_y - 9
+            # End caps
+            pygame.draw.line(self._surface, BLACK, (lx, line_y - 4), (lx, line_y + 4), 1)
+            pygame.draw.line(self._surface, BLACK, (rx, line_y - 4), (rx, line_y + 4), 1)
+            # Line left of label
+            pygame.draw.line(self._surface, BLACK, (lx, line_y), (label_x - pad, line_y), 1)
+            # Label
+            self._surface.blit(font.render(label, True, BLACK), (label_x, label_y))
+            # Line right of label
+            pygame.draw.line(self._surface, BLACK, (label_x + lw + pad, line_y), (rx, line_y), 1)
 
-        # YAP / CHILL bracket labels
-        # YAP over left half (0–300), CHILL over right half (300–600)
-        yap_w = len('YAP') * self._char_w(2)
-        chill_w = len('CHILL') * self._char_w(2)
-        self._text('YAP',   (150 - yap_w // 2),   504, 2)
-        self._text('CHILL', (450 - chill_w // 2),  504, 2)
-
-        # Bracket lines
-        for lx, rx in [(10, 290), (310, 590)]:
-            pygame.draw.lines(self._surface, BLACK, False,
-                              [(lx, 522), (lx, 518), (rx, 518), (rx, 522)], 1)
-
-        # 4 buttons
+        # 4 buttons — 8px gap between YAP and CHILL groups
         buttons = ['TEXT', 'CALL', 'READ', 'LISTEN']
-        btn_w, btn_h, btn_y = 150, 65, 528
-        for i, label in enumerate(buttons):
-            bx = i * btn_w
+        btn_positions = [0, 150, 308, 458]
+        btn_w, btn_h, btn_y = 142, 65, 535
+        for i, (label, bx) in enumerate(zip(buttons, btn_positions)):
             cw = len(label) * self._char_w(2)
             lx = bx + (btn_w - cw) // 2
             ly = btn_y + (btn_h - 16) // 2
-            if i == home_sel and home_sel >= 0:
+            selected = i == home_sel and home_sel >= 0
+            if selected:
                 pygame.draw.rect(self._surface, BLACK, (bx, btn_y, btn_w, btn_h))
                 self._text(label, lx, ly, 2, WHITE)
             else:
                 pygame.draw.rect(self._surface, BLACK, (bx, btn_y, btn_w, btn_h), 2)
                 self._text(label, lx, ly, 2, BLACK)
+
+            # Unread badge on TEXT button (index 0)
+            if i == 0 and unread > 0:
+                badge_size = 24
+                pygame.draw.rect(self._surface, WHITE if selected else BLACK,
+                                 (bx + 2, btn_y + 2, badge_size, badge_size))
+                badge_label = str(min(unread, 9))
+                bx2 = bx + 2 + (badge_size - self._char_w(2)) // 2
+                by2 = btn_y + 2 + (badge_size - 16) // 2
+                self._text(badge_label, bx2, by2, 2, BLACK if selected else WHITE)
 
     def _draw_msg_list(self, data):
         parts = data.split('|')

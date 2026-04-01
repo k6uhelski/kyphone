@@ -92,12 +92,12 @@ void IRAM_ATTR cs_falling_isr() {
 // --- Screen Renderers ---
 
 void render_home(char* data) {
-    // data = "HH:MM|Day, Mon DD|N new messages"
+    // data = "HH:MM|Day, Mon DD|{unread}|{home_sel}"
+    // home_sel: -1=none, 0=TEXT, 1=CALL, 2=READ, 3=LISTEN
     char time_str[16] = "";
     char date_str[32] = "";
-    char notif_str[32] = "";
-
-    bool yap_selected = false;
+    int unread = 0;
+    int home_sel = -1;
 
     char* p1 = strchr(data, '|');
     if (p1 != NULL) {
@@ -107,10 +107,12 @@ void render_home(char* data) {
             strncpy(date_str, p1 + 1, p2 - p1 - 1);
             char* p3 = strchr(p2 + 1, '|');
             if (p3 != NULL) {
-                strncpy(notif_str, p2 + 1, p3 - p2 - 1);
-                yap_selected = (*(p3 + 1) == '1');
+                char unread_buf[8] = "";
+                strncpy(unread_buf, p2 + 1, p3 - p2 - 1);
+                unread = atoi(unread_buf);
+                home_sel = atoi(p3 + 1);
             } else {
-                strncpy(notif_str, p2 + 1, sizeof(notif_str) - 1);
+                unread = atoi(p2 + 1);
             }
         } else {
             strncpy(date_str, p1 + 1, sizeof(date_str) - 1);
@@ -119,52 +121,105 @@ void render_home(char* data) {
         strncpy(time_str, data, sizeof(time_str) - 1);
     }
 
-    bool has_notif = strlen(notif_str) > 0;
-
-    // Status bar — always shown
+    // Status bar
     display.setTextSize(2);
     display.setCursor(10, 8);
     display.print("KyPhone");
-    display.drawLine(0, 34, 600, 34, BLACK);
 
-    // Clock + date vertically centered in remaining space (y=35 to y=600)
-    // Clock: textSize 10 = ~80px tall. Date: textSize 3 = ~24px tall. Gap: 24px.
+    // Clock + date vertically centered above button row (y=35 to ~520)
     int total_h = 80 + 24 + 24;
-    int start_y = 35 + (565 - total_h) / 2;
+    int start_y = 35 + (475 - total_h) / 2;
 
-    // Clock — horizontally centered (60px per char at textSize 10)
+    // Clock — textSize 10 = 60px wide per char, 80px tall
     display.setTextSize(10);
     int clock_w = strlen(time_str) * 60;
     display.setCursor((600 - clock_w) / 2, start_y);
     display.print(time_str);
 
-    // Date — horizontally centered (18px per char at textSize 3)
+    // Date — textSize 3 = 18px wide per char, 24px tall
     display.setTextSize(3);
     int date_w = strlen(date_str) * 18;
     display.setCursor((600 - date_w) / 2, start_y + 80 + 24);
     display.print(date_str);
 
-    // Notification — only shown if unread messages
-    if (has_notif) {
-        display.drawLine(0, start_y + 80 + 24 + 40, 600, start_y + 80 + 24 + 40, BLACK);
-        display.setTextSize(3);
-        display.setCursor(20, start_y + 80 + 24 + 50);
-        display.print(notif_str);
+    // YAP / CHILL inline separator labels (textSize 1 = 6px wide per char)
+    int line_y = 526;
+    int pad = 4;
+
+    // YAP spans [0, 292]  (TEXT btn right edge: 150+142)
+    {
+        int lx = 0, rx = 292;
+        int lw = 3 * 6; // "YAP" = 3 chars
+        int label_x = lx + (rx - lx - lw) / 2;
+        int label_y = line_y - 8;
+        display.drawLine(lx, line_y - 4, lx, line_y + 4, BLACK);
+        display.drawLine(rx, line_y - 4, rx, line_y + 4, BLACK);
+        display.drawLine(lx, line_y, label_x - pad, line_y, BLACK);
+        display.drawLine(label_x + lw + pad, line_y, rx, line_y, BLACK);
+        display.setTextSize(1);
+        display.setCursor(label_x, label_y);
+        display.print("YAP");
     }
 
-    // YAP button — bottom left
-    int yap_cx = 80, yap_cy = 545, yap_r = 50;
-    if (yap_selected) {
-        display.fillCircle(yap_cx, yap_cy, yap_r, BLACK);
-        display.setTextColor(WHITE);
-    } else {
-        display.drawCircle(yap_cx, yap_cy, yap_r, BLACK);
-        display.setTextColor(BLACK);
+    // CHILL spans [308, 599]  (READ btn left edge to screen edge)
+    {
+        int lx = 308, rx = 599;
+        int lw = 5 * 6; // "CHILL" = 5 chars
+        int label_x = lx + (rx - lx - lw) / 2;
+        int label_y = line_y - 8;
+        display.drawLine(lx, line_y - 4, lx, line_y + 4, BLACK);
+        display.drawLine(rx, line_y - 4, rx, line_y + 4, BLACK);
+        display.drawLine(lx, line_y, label_x - pad, line_y, BLACK);
+        display.drawLine(label_x + lw + pad, line_y, rx, line_y, BLACK);
+        display.setTextSize(1);
+        display.setCursor(label_x, label_y);
+        display.print("CHILL");
     }
-    display.setTextSize(3);
-    display.setCursor(yap_cx - 27, yap_cy - 12);
-    display.print("YAP");
-    display.setTextColor(BLACK); // reset
+
+    // 4 buttons: TEXT, CALL, READ, LISTEN
+    const char* buttons[] = {"TEXT", "CALL", "READ", "LISTEN"};
+    int btn_positions[] = {0, 150, 308, 458};
+    int btn_w = 142, btn_h = 65, btn_y = 535;
+
+    for (int i = 0; i < 4; i++) {
+        int bx = btn_positions[i];
+        bool selected = (i == home_sel);
+        int cw = strlen(buttons[i]) * 12; // textSize 2: 6*2=12px per char
+        int lx = bx + (btn_w - cw) / 2;
+        int ly = btn_y + (btn_h - 16) / 2; // 16 = textSize 2 height
+
+        if (selected) {
+            display.fillRect(bx, btn_y, btn_w, btn_h, BLACK);
+            display.setTextColor(WHITE);
+        } else {
+            display.drawRect(bx, btn_y, btn_w, btn_h, BLACK);
+            display.setTextColor(BLACK);
+        }
+        display.setTextSize(2);
+        display.setCursor(lx, ly);
+        display.print(buttons[i]);
+        display.setTextColor(BLACK);
+
+        // Unread badge on TEXT button (index 0)
+        if (i == 0 && unread > 0) {
+            int badge_size = 24;
+            int bx2 = bx + 2, by2 = btn_y + 2;
+            if (selected) {
+                display.fillRect(bx2, by2, badge_size, badge_size, WHITE);
+                display.setTextColor(BLACK);
+            } else {
+                display.fillRect(bx2, by2, badge_size, badge_size, BLACK);
+                display.setTextColor(WHITE);
+            }
+            char badge_label[2] = {'0' + (char)(unread > 9 ? 9 : unread), '\0'};
+            int tx = bx2 + (badge_size - 12) / 2;
+            int ty = by2 + (badge_size - 16) / 2;
+            display.setTextSize(2);
+            display.setCursor(tx, ty);
+            display.print(badge_label);
+            display.setTextColor(BLACK);
+        }
+    }
 }
 
 void render_msg_list(char* data, int selected) {
