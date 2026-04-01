@@ -276,9 +276,60 @@ void render_msg_list(char* data, int selected) {
     }
 }
 
+// Render word-wrapped text, advancing *y by line_h per line.
+// right_align=true: each line is right-aligned to right margin.
+void render_wrapped(const char* text, bool right_align, int* y, int line_h) {
+    const int margin = 20;
+    const int char_w = 18; // textSize 3: 6*3
+    const int max_chars = (600 - margin * 2) / char_w; // ~30 chars
+
+    char line_buf[64] = "";
+    const char* p = text;
+
+    while (true) {
+        // Find next word
+        const char* word_start = p;
+        while (*p && *p != ' ') p++;
+        int word_len = p - word_start;
+
+        if (word_len > 0) {
+            int line_len = strlen(line_buf);
+            bool fits = (line_len == 0) ? (word_len <= max_chars)
+                                        : (line_len + 1 + word_len <= max_chars);
+            if (fits) {
+                if (line_len > 0) strcat(line_buf, " ");
+                strncat(line_buf, word_start, word_len);
+            } else {
+                // Flush current line
+                if (line_len > 0) {
+                    int x = right_align ? (600 - margin - (int)strlen(line_buf) * char_w) : margin;
+                    if (x < margin) x = margin;
+                    display.setCursor(x, *y);
+                    display.print(line_buf);
+                    *y += line_h;
+                    memset(line_buf, 0, sizeof(line_buf));
+                }
+                strncat(line_buf, word_start, word_len < 62 ? word_len : 62);
+            }
+        }
+
+        if (*p == '\0') break;
+        p++; // skip space
+    }
+
+    // Flush remaining
+    if (strlen(line_buf) > 0) {
+        int x = right_align ? (600 - margin - (int)strlen(line_buf) * char_w) : margin;
+        if (x < margin) x = margin;
+        display.setCursor(x, *y);
+        display.print(line_buf);
+        *y += line_h;
+    }
+}
+
 void render_msg_thread(char* data) {
     // data = "Name|Y:body|R:body|..."
-    // Y = sent by you (left), R = received (right)
+    // Y = sent by you (left-aligned), R = received (right-aligned)
     char name_buf[32] = "";
     char* pipe = strchr(data, '|');
     if (pipe != NULL) {
@@ -289,15 +340,16 @@ void render_msg_thread(char* data) {
         data = NULL;
     }
 
+    // Centered name header
     display.setTextSize(3);
-    display.setCursor(20, 10);
+    int name_x = (600 - (int)strlen(name_buf) * 18) / 2;
+    if (name_x < 10) name_x = 10;
+    display.setCursor(name_x, 10);
     display.print(name_buf);
     display.drawLine(0, 46, 600, 46, BLACK);
 
     int y = 60;
-    int line_h = 36; // 24px text + 12px padding
-    int margin = 20;
-    // textSize 3: 6*3=18px per char
+    int line_h = 36;
     while (data != NULL && y < 560) {
         char* next = strchr(data, '|');
         char msg_buf[64] = "";
@@ -317,15 +369,7 @@ void render_msg_thread(char* data) {
         }
 
         display.setTextSize(3);
-        if (align == 'Y') {
-            display.setCursor(margin, y);
-        } else {
-            int x = 600 - margin - (int)strlen(body) * 18;
-            if (x < margin) x = margin;
-            display.setCursor(x, y);
-        }
-        display.print(body);
-        y += line_h;
+        render_wrapped(body, align == 'R', &y, line_h);
     }
 }
 
@@ -451,9 +495,24 @@ void loop() {
                 Serial.printf("SUCCESS! MSG: %s\n", text);
 
                 if (strncmp(text, "HOME_FAST|", 10) == 0) {
-                    // Full layout, partial refresh — faster clock tick with no flash
                     display.clearDisplay();
                     render_home(text + 10);
+                    display.partialUpdate();
+                    delay(100);
+                    display.einkOff();
+                    reclaim_spi_pins_for_gpio();
+                } else if (strncmp(text, "MSG_LIST_FAST|", 14) == 0) {
+                    char* after = text + 14;
+                    int sel = 0;
+                    char* idx_end = strchr(after, '|');
+                    if (idx_end != NULL) {
+                        char idx_buf[4] = "";
+                        strncpy(idx_buf, after, idx_end - after);
+                        sel = atoi(idx_buf);
+                        after = idx_end + 1;
+                    }
+                    display.clearDisplay();
+                    render_msg_list(after, sel);
                     display.partialUpdate();
                     delay(100);
                     display.einkOff();

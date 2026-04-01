@@ -168,7 +168,7 @@ def push_home(fast=False):
     push_screen(f"{prefix}|{time_str}|{date_str}|{unread}|{home_sel}")
 
 
-def push_msg_list(selected=0):
+def push_msg_list(selected=0, fast=False):
     conversations = get_conversations()
     if not conversations:
         push_screen("MSG_LIST|0|No messages yet")
@@ -180,7 +180,8 @@ def push_msg_list(selected=0):
         name = m['name'][:10]
         preview = m['body'][:18]
         parts.append(f"{name}\xb7{preview}")  # middle dot separator
-    push_screen("MSG_LIST|" + "|".join(parts))
+    prefix = "MSG_LIST_FAST" if fast else "MSG_LIST"
+    push_screen(prefix + "|" + "|".join(parts))
 
 
 def push_msg_thread(sender):
@@ -254,10 +255,14 @@ def handle_key(keycode):
     elif screen == 'MSG_LIST':
         if keycode in ('KEY_DOWN', 'KEY_RIGHT'):
             new_sel = min(selected + 1, max(0, len(conversations) - 1))
-            navigate_to('MSG_LIST', selected=new_sel)
+            with state['lock']:
+                state['nav']['selected'] = new_sel
+            push_msg_list(new_sel, fast=True)
         elif keycode in ('KEY_UP', 'KEY_LEFT'):
             new_sel = max(selected - 1, 0)
-            navigate_to('MSG_LIST', selected=new_sel)
+            with state['lock']:
+                state['nav']['selected'] = new_sel
+            push_msg_list(new_sel, fast=True)
         elif keycode == 'KEY_ENTER':
             if conversations and selected < len(conversations):
                 sender = conversations[selected]['sender']

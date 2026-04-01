@@ -124,6 +124,24 @@ class Simulator:
     def _line(self, y):
         pygame.draw.line(self._surface, BLACK, (0, y), (self.WIDTH, y), 1)
 
+    def _wrap_lines(self, text, text_size, max_px):
+        """Break text into lines fitting within max_px width."""
+        char_w = self._char_w(text_size)
+        max_chars = max_px // char_w
+        words = text.split(' ')
+        lines, current = [], ''
+        for word in words:
+            if not current:
+                current = word
+            elif len(current) + 1 + len(word) <= max_chars:
+                current += ' ' + word
+            else:
+                lines.append(current)
+                current = word
+        if current:
+            lines.append(current)
+        return lines or ['']
+
     def _draw(self, command):
         self._surface.fill(WHITE)
         if '|' in command:
@@ -133,7 +151,7 @@ class Simulator:
 
         if prefix in ('HOME', 'HOME_FAST'):
             self._draw_home(rest)
-        elif prefix == 'MSG_LIST':
+        elif prefix in ('MSG_LIST', 'MSG_LIST_FAST'):
             self._draw_msg_list(rest)
         elif prefix == 'MSG_THREAD':
             self._draw_msg_thread(rest)
@@ -245,25 +263,26 @@ class Simulator:
         name = parts[0] if parts else ''
         msgs = parts[1:] if len(parts) > 1 else []
 
-        self._text(name, 20, 10, 3)
+        self._text_centered(name, 10, 3)
         self._line(46)
 
         y = 60
-        ts = 3  # textSize 3 = 24px tall, 18px wide per char
-        line_h = ts * 8 + 12  # 24px + 12px padding
+        ts = 3
+        line_h = ts * 8 + 12
         margin = 20
+        max_w = self.WIDTH - margin * 2
         for msg in msgs:
             if len(msg) >= 2 and msg[1] == ':':
                 align, body = msg[0], msg[2:]
             else:
                 align, body = 'R', msg
-            if align == 'Y':
-                self._text(body, margin, y, ts)
-            else:
-                w = len(body) * self._char_w(ts)
-                x = self.WIDTH - w - margin
-                self._text(body, x, y, ts)
-            y += line_h
+            for line in self._wrap_lines(body, ts, max_w):
+                if align == 'Y':
+                    self._text(line, margin, y, ts)
+                else:
+                    w = len(line) * self._char_w(ts)
+                    self._text(line, self.WIDTH - w - margin, y, ts)
+                y += line_h
 
     def _draw_sms(self, text):
         if '|' in text:
