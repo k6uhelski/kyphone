@@ -157,14 +157,15 @@ def get_conversations():
     return list(seen.values())[:4]
 
 
-def push_home():
+def push_home(fast=False):
     now = datetime.now()
     time_str = now.strftime("%-I:%M %p")
     date_str = now.strftime("%a, %b %-d")
     with state['lock']:
         unread = sum(1 for m in state['messages'] if not m['read'])
         home_sel = state['nav']['home_sel']
-    push_screen(f"HOME|{time_str}|{date_str}|{unread}|{home_sel}")
+    prefix = "HOME_FAST" if fast else "HOME"
+    push_screen(f"{prefix}|{time_str}|{date_str}|{unread}|{home_sel}")
 
 
 def push_msg_list(selected=0):
@@ -233,17 +234,17 @@ def handle_key(keycode):
         if keycode == 'KEY_UP':
             with state['lock']:
                 state['nav']['home_sel'] = -1
-            push_home()
+            push_home(fast=True)
         elif keycode == 'KEY_LEFT':
             with state['lock']:
                 cur = state['nav']['home_sel']
                 state['nav']['home_sel'] = (cur - 1) % 4 if cur >= 0 else 3
-            push_home()
+            push_home(fast=True)
         elif keycode in ('KEY_RIGHT', 'KEY_DOWN'):
             with state['lock']:
                 cur = state['nav']['home_sel']
                 state['nav']['home_sel'] = (cur + 1) % 4 if cur >= 0 else 0
-            push_home()
+            push_home(fast=True)
         elif keycode == 'KEY_ENTER':
             with state['lock']:
                 home_sel = state['nav']['home_sel']
@@ -370,15 +371,27 @@ def main():
     # Load persisted messages from disk
     load_messages()
 
-    # Seed last_sid to avoid replaying old messages (only if not loaded from disk)
-    if state['last_sid'] is None:
+    # On first run (no saved state), backfill recent messages from Twilio
+    if state['last_sid'] is None and client is not None:
         try:
-            recent = client.messages.list(to=TWILIO_NUMBER, limit=1)
+            recent = client.messages.list(to=TWILIO_NUMBER, limit=20)
             if recent:
                 state['last_sid'] = recent[0].sid
+            inbound = [m for m in recent if m.direction == 'inbound']
+            for msg in reversed(inbound):  # oldest first
+                state['messages'].append({
+                    'sender': msg.from_,
+                    'name': format_name(msg.from_),
+                    'body': msg.body,
+                    'read': True,
+                })
+            if inbound:
+                save_messages()
+                print(f"Backfilled {len(inbound)} messages from Twilio.")
+            elif recent:
                 print(f"Starting from SID: {state['last_sid']}")
         except Exception as e:
-            print(f"Warning: could not seed SID: {e}")
+            print(f"Warning: could not backfill messages: {e}")
 
     # Start background threads
     threading.Thread(target=clock_loop, daemon=True).start()
