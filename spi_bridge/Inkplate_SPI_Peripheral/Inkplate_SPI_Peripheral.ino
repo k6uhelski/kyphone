@@ -277,7 +277,8 @@ void render_msg_list(char* data, int selected) {
 }
 
 void render_msg_thread(char* data) {
-    // data = "Name|msg1|msg2|..."
+    // data = "Name|Y:body|R:body|..."
+    // Y = sent by you (left), R = received (right)
     char name_buf[32] = "";
     char* pipe = strchr(data, '|');
     if (pipe != NULL) {
@@ -288,13 +289,15 @@ void render_msg_thread(char* data) {
         data = NULL;
     }
 
-    // Header: sender name
     display.setTextSize(3);
     display.setCursor(20, 10);
     display.print(name_buf);
     display.drawLine(0, 46, 600, 46, BLACK);
 
     int y = 60;
+    int line_h = 36; // 24px text + 12px padding
+    int margin = 20;
+    // textSize 3: 6*3=18px per char
     while (data != NULL && y < 560) {
         char* next = strchr(data, '|');
         char msg_buf[64] = "";
@@ -305,10 +308,24 @@ void render_msg_thread(char* data) {
             strncpy(msg_buf, data, sizeof(msg_buf) - 1);
             data = NULL;
         }
-        display.setTextSize(2);
-        display.setCursor(20, y);
-        display.print(msg_buf);
-        y += 30;
+
+        char align = 'R';
+        char* body = msg_buf;
+        if (strlen(msg_buf) >= 2 && msg_buf[1] == ':') {
+            align = msg_buf[0];
+            body = msg_buf + 2;
+        }
+
+        display.setTextSize(3);
+        if (align == 'Y') {
+            display.setCursor(margin, y);
+        } else {
+            int x = 600 - margin - (int)strlen(body) * 18;
+            if (x < margin) x = margin;
+            display.setCursor(x, y);
+        }
+        display.print(body);
+        y += line_h;
     }
 }
 

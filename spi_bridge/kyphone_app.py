@@ -190,8 +190,8 @@ def push_msg_thread(sender):
     name = format_name(sender)
     parts = [name]
     for m in thread[-5:]:  # last 5 messages
-        prefix = "You" if m['sender'] == TWILIO_NUMBER else ">"
-        parts.append(f"{prefix}: {m['body'][:22]}")
+        prefix = "Y" if m['sender'] == TWILIO_NUMBER else "R"
+        parts.append(f"{prefix}:{m['body'][:32]}")
     push_screen("MSG_THREAD|" + "|".join(parts))
 
 

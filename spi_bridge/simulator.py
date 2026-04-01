@@ -249,9 +249,21 @@ class Simulator:
         self._line(46)
 
         y = 60
+        ts = 3  # textSize 3 = 24px tall, 18px wide per char
+        line_h = ts * 8 + 12  # 24px + 12px padding
+        margin = 20
         for msg in msgs:
-            self._text(msg, 20, y, 2)
-            y += 30
+            if len(msg) >= 2 and msg[1] == ':':
+                align, body = msg[0], msg[2:]
+            else:
+                align, body = 'R', msg
+            if align == 'Y':
+                self._text(body, margin, y, ts)
+            else:
+                w = len(body) * self._char_w(ts)
+                x = self.WIDTH - w - margin
+                self._text(body, x, y, ts)
+            y += line_h
 
     def _draw_sms(self, text):
         if '|' in text:
