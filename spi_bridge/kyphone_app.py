@@ -37,7 +37,7 @@ HANDSHAKE_LINE = 21
 SPI_BUS = 3
 SPI_DEV = 0
 SPI_SPEED_HZ = 5000
-PAYLOAD_BYTES = 128
+PAYLOAD_BYTES = 256
 
 SMS_DISPLAY_DURATION = 10   # seconds to show SMS before returning to home
 CLOCK_UPDATE_INTERVAL = 60  # seconds between home screen refreshes
@@ -179,7 +179,8 @@ def push_msg_list(selected=0, fast=False):
     for m in conversations:
         name = m['name'][:10]
         preview = m['body'][:18]
-        parts.append(f"{name}\xb7{preview}")  # middle dot separator
+        time_str = m.get('time', '')
+        parts.append(f"{name}\xb7{preview}\xb7{time_str}")
     prefix = "MSG_LIST_FAST" if fast else "MSG_LIST"
     push_screen(prefix + "|" + "|".join(parts))
 
@@ -341,6 +342,7 @@ def sms_loop():
                         'name': name,
                         'body': msg.body,
                         'read': False,
+                        'time': datetime.now().strftime("%-I:%M %p"),
                     })
                     save_messages()
                 print(f"\n[NEW SMS] {name}: {msg.body}")
@@ -366,6 +368,7 @@ def send_reply(to_number, body):
                 'name': 'You',
                 'body': body,
                 'read': True,
+                'time': datetime.now().strftime("%-I:%M %p"),
             })
         print(f"  → sent: {body} (SID: {msg.sid})")
     except Exception as e:
@@ -384,11 +387,16 @@ def main():
                 state['last_sid'] = recent[0].sid
             inbound = [m for m in recent if m.direction == 'inbound']
             for msg in reversed(inbound):  # oldest first
+                try:
+                    time_str = msg.date_sent.strftime("%-I:%M %p") if msg.date_sent else ''
+                except Exception:
+                    time_str = ''
                 state['messages'].append({
                     'sender': msg.from_,
                     'name': format_name(msg.from_),
                     'body': msg.body,
                     'read': True,
+                    'time': time_str,
                 })
             if inbound:
                 save_messages()

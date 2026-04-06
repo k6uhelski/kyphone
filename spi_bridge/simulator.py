@@ -237,26 +237,45 @@ class Simulator:
         sel = int(parts[0]) if parts and parts[0].isdigit() else 0
         entries = parts[1:] if parts and parts[0].isdigit() else parts
 
-        self._text('Messages', 20, 10, 3)
-        self._line(46)
+        # Inverted header bar
+        header_h = 44
+        pygame.draw.rect(self._surface, BLACK, (0, 0, self.WIDTH, header_h))
+        self._text('TEXT', 16, 10, 3, WHITE)
+        self._text('+', self.WIDTH - 16 - self._char_w(3), 10, 3, WHITE)
 
-        y = 60
+        row_h = 72
+        margin = 16
+        y = header_h
         for i, entry in enumerate(entries):
-            if '\xb7' in entry:
-                name, preview = entry.split('\xb7', 1)
-            else:
-                name, preview = entry, ''
+            fields = entry.split('\xb7')
+            name    = fields[0] if len(fields) > 0 else ''
+            preview = fields[1] if len(fields) > 1 else ''
+            ts      = fields[2] if len(fields) > 2 else ''
 
+            fg = WHITE if i == sel else BLACK
             if i == sel:
-                pygame.draw.rect(self._surface, BLACK, (0, y - 4, self.WIDTH, 84))
-                self._text(name,    20, y,      3, WHITE)
-                self._text(preview, 20, y + 34, 2, WHITE)
-            else:
-                self._text(name,    20, y,      3, BLACK)
-                self._text(preview, 20, y + 34, 2, BLACK)
+                pygame.draw.rect(self._surface, BLACK, (0, y, self.WIDTH, row_h))
 
-            y += 90
-            self._line(y - 6)
+            # Name — textSize 3, left
+            self._text(name, margin, y + 8, 3, fg)
+
+            # Chevron — textSize 2, right, vertically centered
+            chevron_w = self._char_w(2)
+            chevron_x = self.WIDTH - margin - chevron_w
+            chevron_y = y + (row_h - 16) // 2
+            self._text('>', chevron_x, chevron_y, 2, fg)
+
+            # Timestamp — textSize 2, left of chevron, aligned with name baseline
+            if ts:
+                ts_w = len(ts) * self._char_w(2)
+                self._text(ts, chevron_x - ts_w - 8, y + 16, 2, fg)
+
+            # Preview — textSize 2, left
+            self._text(preview, margin, y + 40, 2, fg)
+
+            # Divider
+            self._line(y + row_h - 1)
+            y += row_h
 
     def _draw_msg_thread(self, data):
         parts = data.split('|')

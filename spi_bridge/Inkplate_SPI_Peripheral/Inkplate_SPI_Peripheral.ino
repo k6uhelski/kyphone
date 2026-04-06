@@ -13,7 +13,7 @@ Inkplate display(INKPLATE_1BIT);
 #define PIN_HANDSHAKE IO_PIN_B0 // P1-0 expander pin
 
 // --- ISR Variables ---
-#define PAYLOAD_BYTES 128
+#define PAYLOAD_BYTES 256
 #define TOTAL_BITS (PAYLOAD_BYTES * 8)
 
 volatile uint8_t rx_buf[PAYLOAD_BYTES];
@@ -223,19 +223,28 @@ void render_home(char* data) {
 }
 
 void render_msg_list(char* data, int selected) {
-    // data = "Name1·preview1|Name2·preview2|..."
-    // selected = index of highlighted row
-    display.setTextSize(3);
-    display.setCursor(20, 10);
-    display.print("Messages");
-    display.drawLine(0, 46, 600, 46, BLACK);
+    // data = "Name·preview·time|Name·preview·time|..."
+    const int header_h = 44;
+    const int row_h    = 72;
+    const int margin   = 16;
 
-    int y = 60;
+    // Inverted header bar
+    display.fillRect(0, 0, 600, header_h, BLACK);
+    display.setTextColor(WHITE);
+    display.setTextSize(3);
+    display.setCursor(margin, 10);
+    display.print("TEXT");
+    display.setCursor(600 - margin - 18, 10); // 18 = 1 char at textSize 3
+    display.print("+");
+    display.setTextColor(BLACK);
+
+    int y = header_h;
     int row = 0;
     char* entry = data;
-    while (entry != NULL && y < 560) {
+
+    while (entry != NULL && y + row_h <= 600) {
         char* next = strchr(entry, '|');
-        char entry_buf[64] = "";
+        char entry_buf[80] = "";
         if (next != NULL) {
             strncpy(entry_buf, entry, next - entry);
             entry = next + 1;
@@ -244,35 +253,60 @@ void render_msg_list(char* data, int selected) {
             entry = NULL;
         }
 
-        bool is_selected = (row == selected);
-        if (is_selected) {
-            display.fillRect(0, y - 4, 600, 84, BLACK);
+        // Parse name·preview·time
+        char name_buf[16]    = "";
+        char preview_buf[24] = "";
+        char time_buf[12]    = "";
+
+        char* dot1 = strchr(entry_buf, '\xB7');
+        if (dot1 != NULL) {
+            strncpy(name_buf, entry_buf, dot1 - entry_buf);
+            char* dot2 = strchr(dot1 + 1, '\xB7');
+            if (dot2 != NULL) {
+                strncpy(preview_buf, dot1 + 1, dot2 - dot1 - 1);
+                strncpy(time_buf, dot2 + 1, sizeof(time_buf) - 1);
+            } else {
+                strncpy(preview_buf, dot1 + 1, sizeof(preview_buf) - 1);
+            }
+        } else {
+            strncpy(name_buf, entry_buf, sizeof(name_buf) - 1);
+        }
+
+        bool is_sel = (row == selected);
+        if (is_sel) {
+            display.fillRect(0, y, 600, row_h, BLACK);
             display.setTextColor(WHITE);
         }
 
-        // Split entry on middle dot (0xB7 raw)
-        char* dot = strchr(entry_buf, '\xB7');
-        if (dot != NULL) {
-            *dot = '\0';
-            display.setTextSize(3);
-            display.setCursor(20, y);
-            display.print(entry_buf);
-            display.setTextSize(2);
-            display.setCursor(20, y + 34);
-            display.print(dot + 1);
-        } else {
-            display.setTextSize(3);
-            display.setCursor(20, y);
-            display.print(entry_buf);
+        // Name — textSize 3, left
+        display.setTextSize(3);
+        display.setCursor(margin, y + 8);
+        display.print(name_buf);
+
+        // Chevron — textSize 2, right, vertically centered
+        int chevron_x = 600 - margin - 12; // 12 = 1 char at textSize 2
+        display.setTextSize(2);
+        display.setCursor(chevron_x, y + (row_h - 16) / 2);
+        display.print(">");
+
+        // Timestamp — textSize 2, left of chevron
+        if (strlen(time_buf) > 0) {
+            int ts_w = strlen(time_buf) * 12; // textSize 2: 12px per char
+            display.setCursor(chevron_x - ts_w - 8, y + 16);
+            display.print(time_buf);
         }
 
-        if (is_selected) {
+        // Preview — textSize 2, left
+        display.setCursor(margin, y + 40);
+        display.print(preview_buf);
+
+        if (is_sel) {
             display.setTextColor(BLACK);
         }
 
+        display.drawLine(0, y + row_h - 1, 600, y + row_h - 1, BLACK);
         row++;
-        y += 90;
-        display.drawLine(0, y - 6, 600, y - 6, BLACK);
+        y += row_h;
     }
 }
 
@@ -427,9 +461,9 @@ void loop() {
             millis(), debug_sclk_total, bit_counter, cs_val);
     }
 
-    // Framing: 500ms silence = end of message (54ms transfer at 5kHz + 10x margin)
+    // Framing: 1500ms silence = end of message (410ms transfer at 5kHz for 256 bytes + margin)
     if (!transfer_complete && bit_counter > 0) {
-        if (now_us - last_sclk_time > 500000) {
+        if (now_us - last_sclk_time > 1500000) {
             if (bit_counter == TOTAL_BITS) {
                 transfer_complete = true;
             } else if (bit_counter > TOTAL_BITS) {
