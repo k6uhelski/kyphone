@@ -237,11 +237,25 @@ class Simulator:
         sel = int(parts[0]) if parts and parts[0].isdigit() else 0
         entries = parts[1:] if parts and parts[0].isdigit() else parts
 
-        # Inverted header bar
+        # Header bar — outline style
         header_h = 44
-        pygame.draw.rect(self._surface, BLACK, (0, 0, self.WIDTH, header_h))
-        self._text('TEXT', 16, 10, 3, WHITE)
-        self._text('+', self.WIDTH - 16 - self._char_w(3), 10, 3, WHITE)
+        self._line(header_h - 1)
+
+        # < back (left), TEXT centered, + (right)
+        # Active state: filled rect behind char, char in white
+        def _header_btn(char, x, active=False):
+            cw = self._char_w(3)
+            ch = 3 * 8
+            if active:
+                pygame.draw.rect(self._surface, BLACK, (x - 4, 6, cw + 8, ch + 8))
+                self._text(char, x, 10, 3, WHITE)
+            else:
+                self._text(char, x, 10, 3, BLACK)
+
+        _header_btn('<', 16)
+        title_w = len('TEXT') * self._char_w(3)
+        self._text('TEXT', (self.WIDTH - title_w) // 2, 10, 3)
+        _header_btn('+', self.WIDTH - 16 - self._char_w(3))
 
         row_h = 72
         margin = 16

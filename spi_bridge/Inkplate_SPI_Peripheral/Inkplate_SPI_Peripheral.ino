@@ -228,15 +228,19 @@ void render_msg_list(char* data, int selected) {
     const int row_h    = 72;
     const int margin   = 16;
 
-    // Inverted header bar
-    display.fillRect(0, 0, 600, header_h, BLACK);
-    display.setTextColor(WHITE);
+    // Header bar — outline style: < TEXT +
+    display.drawLine(0, header_h - 1, 600, header_h - 1, BLACK);
     display.setTextSize(3);
-    display.setCursor(margin, 10);
-    display.print("TEXT");
-    display.setCursor(600 - margin - 18, 10); // 18 = 1 char at textSize 3
-    display.print("+");
     display.setTextColor(BLACK);
+    // < back
+    display.setCursor(margin, 10);
+    display.print("<");
+    // TEXT centered (4 chars * 18px = 72px wide)
+    display.setCursor((600 - 72) / 2, 10);
+    display.print("TEXT");
+    // + right
+    display.setCursor(600 - margin - 18, 10);
+    display.print("+");
 
     int y = header_h;
     int row = 0;
