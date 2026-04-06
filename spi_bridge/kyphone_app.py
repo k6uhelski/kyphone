@@ -173,8 +173,9 @@ def push_msg_list(selected=0, fast=False):
     if not conversations:
         push_screen("MSG_LIST|0|No messages yet")
         return
-    # Clamp selected to valid range
-    selected = max(0, min(selected, len(conversations) - 1))
+    # Clamp positive indices; negative values mean header focus (-1=<, -2=+)
+    if selected >= 0:
+        selected = max(0, min(selected, len(conversations) - 1))
     parts = [str(selected)]
     for m in conversations:
         name = m['name'][:10]
@@ -254,18 +255,40 @@ def handle_key(keycode):
                 navigate_to('MSG_LIST', selected=0)
 
     elif screen == 'MSG_LIST':
-        if keycode in ('KEY_DOWN', 'KEY_RIGHT'):
-            new_sel = min(selected + 1, max(0, len(conversations) - 1))
+        if keycode == 'KEY_UP':
+            new_sel = -1 if selected <= 0 else selected - 1
             with state['lock']:
                 state['nav']['selected'] = new_sel
             push_msg_list(new_sel, fast=True)
-        elif keycode in ('KEY_UP', 'KEY_LEFT'):
-            new_sel = max(selected - 1, 0)
+        elif keycode == 'KEY_DOWN':
+            new_sel = 0 if selected < 0 else min(selected + 1, max(0, len(conversations) - 1))
+            with state['lock']:
+                state['nav']['selected'] = new_sel
+            push_msg_list(new_sel, fast=True)
+        elif keycode == 'KEY_LEFT':
+            if selected < 0:
+                new_sel = -1  # always land on <
+            else:
+                new_sel = max(selected - 1, 0)
+            with state['lock']:
+                state['nav']['selected'] = new_sel
+            push_msg_list(new_sel, fast=True)
+        elif keycode == 'KEY_RIGHT':
+            if selected == -1:
+                new_sel = -2  # < → +
+            elif selected == -2:
+                new_sel = -2  # stay at +
+            else:
+                new_sel = min(selected + 1, max(0, len(conversations) - 1))
             with state['lock']:
                 state['nav']['selected'] = new_sel
             push_msg_list(new_sel, fast=True)
         elif keycode == 'KEY_ENTER':
-            if conversations and selected < len(conversations):
+            if selected == -1:
+                navigate_to('HOME')
+            elif selected == -2:
+                pass  # TODO: compose new message
+            elif conversations and 0 <= selected < len(conversations):
                 sender = conversations[selected]['sender']
                 navigate_to('MSG_THREAD', selected=selected, thread_sender=sender)
         elif keycode in ('KEY_BACKSPACE', 'KEY_ESC'):

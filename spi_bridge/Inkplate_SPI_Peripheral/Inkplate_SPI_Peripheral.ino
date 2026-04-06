@@ -231,16 +231,40 @@ void render_msg_list(char* data, int selected) {
     // Header bar — outline style: < TEXT +
     display.drawLine(0, header_h - 1, 600, header_h - 1, BLACK);
     display.setTextSize(3);
-    display.setTextColor(BLACK);
-    // < back
-    display.setCursor(margin, 10);
-    display.print("<");
+
+    // < back — invert when selected == -1
+    if (selected == -1) {
+        int cw = 18, ch = 24;
+        display.fillRect(margin - 4, 6, cw + 8, ch + 8, BLACK);
+        display.setTextColor(WHITE);
+        display.setCursor(margin, 10);
+        display.print("<");
+        display.setTextColor(BLACK);
+    } else {
+        display.setTextColor(BLACK);
+        display.setCursor(margin, 10);
+        display.print("<");
+    }
+
     // TEXT centered (4 chars * 18px = 72px wide)
+    display.setTextColor(BLACK);
     display.setCursor((600 - 72) / 2, 10);
     display.print("TEXT");
-    // + right
-    display.setCursor(600 - margin - 18, 10);
-    display.print("+");
+
+    // + right — invert when selected == -2
+    int plus_x = 600 - margin - 18;
+    if (selected == -2) {
+        int cw = 18, ch = 24;
+        display.fillRect(plus_x - 4, 6, cw + 8, ch + 8, BLACK);
+        display.setTextColor(WHITE);
+        display.setCursor(plus_x, 10);
+        display.print("+");
+        display.setTextColor(BLACK);
+    } else {
+        display.setTextColor(BLACK);
+        display.setCursor(plus_x, 10);
+        display.print("+");
+    }
 
     int y = header_h;
     int row = 0;

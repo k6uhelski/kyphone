@@ -234,8 +234,12 @@ class Simulator:
 
     def _draw_msg_list(self, data):
         parts = data.split('|')
-        sel = int(parts[0]) if parts and parts[0].isdigit() else 0
-        entries = parts[1:] if parts and parts[0].isdigit() else parts
+        try:
+            sel = int(parts[0])
+            entries = parts[1:]
+        except (ValueError, IndexError):
+            sel = 0
+            entries = parts
 
         # Header bar — outline style
         header_h = 44
@@ -252,10 +256,10 @@ class Simulator:
             else:
                 self._text(char, x, 10, 3, BLACK)
 
-        _header_btn('<', 16)
+        _header_btn('<', 16, active=(sel == -1))
         title_w = len('TEXT') * self._char_w(3)
         self._text('TEXT', (self.WIDTH - title_w) // 2, 10, 3)
-        _header_btn('+', self.WIDTH - 16 - self._char_w(3))
+        _header_btn('+', self.WIDTH - 16 - self._char_w(3), active=(sel == -2))
 
         row_h = 72
         margin = 16
