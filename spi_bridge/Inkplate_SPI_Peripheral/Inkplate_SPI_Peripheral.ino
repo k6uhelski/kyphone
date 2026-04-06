@@ -126,6 +126,26 @@ void render_home(char* data) {
     display.setCursor(10, 8);
     display.print("KyPhone");
 
+    // ASCII cat — centered horizontally in space above clock
+    // textSize 1 = 6px wide x 8px tall per char
+    const char* cat[] = {
+        "      /\\_/\\  ",
+        "  /\\  / o o \\ ",
+        " //\\\\ \\~(*)~/",
+        " `  \\/   ^ / ",
+        "    | \\|| || ",
+        "    \\ '|| || ",
+        "     \\)()-())  ",
+    };
+    int cat_max_len = 15;  // longest line char count
+    int cat_x = (600 - cat_max_len * 6) / 2;
+    int cat_y = 35 + (173 - 7 * 9) / 2;  // centered in space above clock
+    display.setTextSize(1);
+    for (int ci = 0; ci < 7; ci++) {
+        display.setCursor(cat_x, cat_y + ci * 9);
+        display.print(cat[ci]);
+    }
+
     // Clock + date vertically centered above button row (y=35 to ~520)
     int total_h = 80 + 24 + 24;
     int start_y = 35 + (475 - total_h) / 2;
