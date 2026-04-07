@@ -121,28 +121,17 @@ void render_home(char* data) {
         strncpy(time_str, data, sizeof(time_str) - 1);
     }
 
-    // Status bar
-    display.setTextSize(2);
-    display.setCursor(10, 8);
-    display.print("KyPhone");
-
-    // ASCII cat — centered horizontally in space above clock
-    // textSize 1 = 6px wide x 8px tall per char
+    // ASCII art — top right, textSize 1 = 6px wide x 8px tall per char
     const char* cat[] = {
-        "      /\\_/\\  ",
-        "  /\\  / o o \\ ",
-        " //\\\\ \\~(*)~/",
-        " `  \\/   ^ / ",
-        "    | \\|| || ",
-        "    \\ '|| || ",
-        "     \\)()-())  ",
+        "   )\\._.,--....,'``.",
+        "  /,   _.. \\   _\\  (`._ ,.",
+        " `._.-(,_..'--(,_..'`-.;.'",
     };
-    int cat_max_len = 15;  // longest line char count
-    int cat_x = (600 - cat_max_len * 6) / 2;
-    int cat_y = 35 + (173 - 7 * 9) / 2;  // centered in space above clock
+    // longest line is 30 chars → 180px wide; right-align with 6px margin
     display.setTextSize(1);
-    for (int ci = 0; ci < 7; ci++) {
-        display.setCursor(cat_x, cat_y + ci * 9);
+    for (int ci = 0; ci < 3; ci++) {
+        int lw = strlen(cat[ci]) * 6;
+        display.setCursor(600 - lw - 6, 6 + ci * 9);
         display.print(cat[ci]);
     }
 
@@ -410,8 +399,7 @@ void render_wrapped(const char* text, bool right_align, int* y, int line_h) {
 }
 
 void render_msg_thread(char* data) {
-    // data = "Name|Y:body|R:body|..."
-    // Y = sent by you (left-aligned), R = received (right-aligned)
+    // data = "Name|Y:time~body|R:time~body|..."
     char name_buf[32] = "";
     char* pipe = strchr(data, '|');
     if (pipe != NULL) {
@@ -430,11 +418,14 @@ void render_msg_thread(char* data) {
     display.print(name_buf);
     display.drawLine(0, 46, 600, 46, BLACK);
 
-    int y = 60;
-    int line_h = 36;
-    while (data != NULL && y < 560) {
+    int y = 56;
+    const int line_h = 22;   // textSize 2: 16px + 6px gap
+    const int margin = 16;
+    char last_time[12] = "";
+
+    while (data != NULL && y < 570) {
         char* next = strchr(data, '|');
-        char msg_buf[64] = "";
+        char msg_buf[80] = "";
         if (next != NULL) {
             strncpy(msg_buf, data, next - data);
             data = next + 1;
@@ -444,14 +435,47 @@ void render_msg_thread(char* data) {
         }
 
         char align = 'R';
-        char* body = msg_buf;
+        char* rest = msg_buf;
         if (strlen(msg_buf) >= 2 && msg_buf[1] == ':') {
             align = msg_buf[0];
-            body = msg_buf + 2;
+            rest = msg_buf + 2;
         }
 
-        display.setTextSize(3);
-        render_wrapped(body, align == 'R', &y, line_h);
+        // Split time~body
+        char time_buf[12] = "";
+        char* body = rest;
+        char* tilde = strchr(rest, '~');
+        if (tilde != NULL) {
+            strncpy(time_buf, rest, tilde - rest);
+            body = tilde + 1;
+        }
+
+        // Time separator if new time
+        if (strlen(time_buf) > 0 && strcmp(time_buf, last_time) != 0) {
+            strncpy(last_time, time_buf, sizeof(last_time) - 1);
+            display.setTextSize(1);
+            int tw = strlen(time_buf) * 6;
+            display.setCursor((600 - tw) / 2, y);
+            display.print(time_buf);
+            y += 16;
+        }
+
+        // AIM style: "Name: body" — name portion bold via textSize 2
+        const char* label = (align == 'Y') ? "Me" : name_buf;
+        char prefix[36] = "";
+        snprintf(prefix, sizeof(prefix), "%s: ", label);
+        int prefix_w = strlen(prefix) * 12;  // textSize 2: 12px per char
+
+        display.setTextSize(2);
+        display.setCursor(margin, y);
+        display.print(prefix);
+
+        // Body — word wrap starting after prefix
+        const int max_body_w = 600 - margin - prefix_w;
+        const int body_x = margin + prefix_w;
+        render_wrapped(body, false, &y, line_h);  // reuse render_wrapped, starts at current y
+
+        y += 4;  // gap between messages
     }
 }
 

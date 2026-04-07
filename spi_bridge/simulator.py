@@ -175,28 +175,19 @@ class Simulator:
         except ValueError:
             home_sel = -1
 
-        # Status bar
-        self._text('KyPhone', 10, 8, 2)
-
-        # ASCII cat — centered horizontally in space above clock
+        # ASCII cat — top right
         cat = [
-            r'      /\_/\  ',
-            r'  /\  / o o \ ',
-            r' //\\ \~(*)~/',
-            r' `  \/   ^ / ',
-            r'    | \|| || ',
-            r"    \ '|| || ",
-            r'     \)()-())  ',
+            r"   )\._.,--....,'``.",
+            r"  /,   _.. \   _\  (`._ ,.",
+            r" `._.-(,_..'--(,_..'`-.;.'",
         ]
-        cat_font = pygame.font.SysFont('courier', 11)
-        cw = cat_font.size(' ')[0]   # monospace: every char is this wide
-        lh = 12
-        max_chars = max(len(l) for l in cat)
-        cat_x = (self.WIDTH - max_chars * cw) // 2
-        cat_y = 35 + (173 - len(cat) * lh) // 2   # centered in space above clock
+        cat_font = pygame.font.SysFont('courier', 13, bold=True)
+        lh = 13
+        max_w = max(cat_font.size(l)[0] for l in cat)
+        cat_x = self.WIDTH - max_w - 6
         for i, line in enumerate(cat):
             img = cat_font.render(line, True, BLACK)
-            self._surface.blit(img, (cat_x, cat_y + i * lh))
+            self._surface.blit(img, (cat_x, 6 + i * lh))
 
         # Clock + date vertically centered in space above button row (y=35..510)
         total_h = 80 + 24 + 24
@@ -327,19 +318,13 @@ class Simulator:
         self._line(46)
 
         y = 56
-        ts = 2           # text size inside bubbles
-        char_h = ts * 8  # 16px
-        line_h = char_h + 6
-        pad = 10         # inner box padding
-        content_w = 480  # width of content area (excluding bracket)
-        bracket_w = 28   # horizontal space for bracket glyph
-        recv_content_x = bracket_w + 4   # content left edge for received
-        sent_content_x = self.WIDTH - bracket_w - 4 - content_w  # for sent
-
+        ts = 2
+        line_h = ts * 8 + 6
+        margin = 16
+        max_w = self.WIDTH - margin * 2
         last_time = None
 
         for msg in msgs:
-            # Parse format: "Y:6:57 PM~body" or "R:6:57 PM~body"
             if len(msg) >= 2 and msg[1] == ':':
                 align = msg[0]
                 rest = msg[2:]
@@ -354,77 +339,26 @@ class Simulator:
             # Time separator
             if time_str and time_str != last_time:
                 last_time = time_str
-                self._text_centered(time_str, y, 2)
-                y += line_h + 6
+                self._text_centered(time_str, y, 1)
+                y += ts * 8 + 10
 
-            # Measure wrapped lines
-            lines = self._wrap_lines(body, ts, content_w - pad * 2)
-            sender_name = name if align == 'R' else ''
-            rows = len(lines) + (1 if sender_name else 0)
-            box_h = pad + rows * line_h + pad
+            # AIM style: "Name: body" — name bold, body normal
+            sender_label = 'Me' if align == 'Y' else name
+            prefix = f"{sender_label}:"
+            font_bold = _get_font(ts * 8, bold=True)
+            prefix_w = font_bold.size(prefix + ' ')[0]
+            wrap_w = max_w - prefix_w
 
-            h = box_h
-            mid = y + h // 2
-            bw = max(18, h // 3)   # bracket width (arm length)
+            lines = self._wrap_lines(body, ts, wrap_w)
+            for i, line in enumerate(lines):
+                if i == 0:
+                    self._surface.blit(font_bold.render(prefix, True, BLACK), (margin, y))
+                    self._text(line, margin + prefix_w, y, ts)
+                else:
+                    self._text(line, margin + prefix_w, y, ts)
+                y += line_h
 
-            if align == 'R':  # received — left side
-                cx = recv_content_x
-                # Content top/bottom lines (start at cx, run right)
-                pygame.draw.line(self._surface, BLACK, (cx, y), (cx + content_w, y), 1)
-                pygame.draw.line(self._surface, BLACK, (cx, y + h), (cx + content_w, y + h), 1)
-                # { traced from top connection (cx,y) → left edge → nub → back → bottom connection (cx,y+h)
-                pts = [
-                    (cx,            y),
-                    (cx - bw//2,    y),
-                    (cx - bw*4//5,  y + h//8),
-                    (cx - bw,       y + h//4),
-                    (cx - bw,       mid - h//8),
-                    (cx - bw - bw//4, mid),        # nub tip (protrudes left)
-                    (cx - bw,       mid + h//8),
-                    (cx - bw,       y + 3*h//4),
-                    (cx - bw*4//5,  y + 7*h//8),
-                    (cx - bw//2,    y + h),
-                    (cx,            y + h),
-                ]
-                pygame.draw.lines(self._surface, BLACK, False, pts, 1)
-                # Content
-                ty = y + pad
-                if sender_name:
-                    self._text(sender_name, cx + pad, ty, ts)
-                    ty += line_h
-                for line in lines:
-                    self._text(line, cx + pad, ty, ts)
-                    ty += line_h
-
-            else:  # sent — right side
-                cx = sent_content_x
-                cr = cx + content_w  # right edge of content (where } connects)
-                # Content top/bottom lines
-                pygame.draw.line(self._surface, BLACK, (cx, y), (cr, y), 1)
-                pygame.draw.line(self._surface, BLACK, (cx, y + h), (cr, y + h), 1)
-                # } traced from top connection (cr,y) → right edge → nub → back → bottom connection (cr,y+h)
-                pts = [
-                    (cr,            y),
-                    (cr + bw//2,    y),
-                    (cr + bw*4//5,  y + h//8),
-                    (cr + bw,       y + h//4),
-                    (cr + bw,       mid - h//8),
-                    (cr + bw + bw//4, mid),        # nub tip (protrudes right)
-                    (cr + bw,       mid + h//8),
-                    (cr + bw,       y + 3*h//4),
-                    (cr + bw*4//5,  y + 7*h//8),
-                    (cr + bw//2,    y + h),
-                    (cr,            y + h),
-                ]
-                pygame.draw.lines(self._surface, BLACK, False, pts, 1)
-                # Content — right-aligned text
-                ty = y + pad
-                for line in lines:
-                    rx = cx + content_w - pad - len(line) * self._char_w(ts)
-                    self._text(line, rx, ty, ts)
-                    ty += line_h
-
-            y += box_h + 14  # gap between bubbles
+            y += 4  # small gap between messages
 
     def _draw_sms(self, text):
         if '|' in text:
