@@ -1,25 +1,35 @@
-# **KyPhone Display Driver**
+# **KyPhone**
 
 KyPhone is a minimal phone designed to revolt against the attention economy. It uses a **Radxa Rock 3A** (SBC running Linux) as the logic master and an **Inkplate 4 TEMPERA** (ESP32-based E-ink display) as the peripheral. The goal is a device that gets out of the way of real-world connection.
 
+> *"Moving away from the sterile black/white brick design. A device that sparks creativity and real connection."*
+
 ---
 
-## **Current Status (March 30, 2026)**
+## **Current Status — April 2026**
 
-KyPhoneOS is running on hardware. The Radxa polls for SMS, renders a full navigation UI on the Inkplate, and persists conversations across reboots. Local development runs on Mac via a pygame simulator — no hardware needed to iterate on UI.
+KyPhoneOS is running on hardware. The Radxa polls for SMS, renders a full navigation UI on the Inkplate, and auto-starts on boot. Local development runs on Mac via a pygame simulator — no hardware needed to iterate on UI.
 
 ### **What works today**
-- **Reliable SPI transport:** Radxa → Inkplate over 3-wire software SPI + handshake. 128-byte payload, 5kHz clock. 1.7s end-to-end latency.
-- **Full navigation UI:** HOME → MSG_LIST → MSG_THREAD. Keyboard navigation via evdev (USB keyboard on Radxa).
-- **Live SMS via Twilio:** Inbound messages appear on screen in ~2 seconds. Read state and conversation history persisted to disk.
+- **SPI transport:** Radxa → Inkplate over 3-wire software SPI + handshake pin. 256-byte payload at 5kHz. ~1.7s end-to-end latency.
+- **Full navigation UI:** HOME → MSG_LIST → MSG_THREAD with keyboard navigation via evdev.
+- **Live SMS via Twilio:** Inbound messages appear on screen within ~2 seconds. Conversation history persisted to disk across reboots.
+- **Partial refresh:** Navigation within the same screen type uses `partialUpdate()` — no full E-ink flash on every keypress.
+- **Auto-start on boot:** systemd service launches KyPhoneOS automatically on Radxa startup.
 - **Pygame simulator:** Run `python3 spi_bridge/kyphone_app.py --sim` on Mac to develop UI without hardware.
-- **Partial clock updates:** Clock refreshes every minute with `partialUpdate()` — no full E-ink flash.
+
+### **Screens**
+
+**HOME** — ASCII art top-right, large clock + date, 4 buttons (TEXT · CALL · READ · LISTEN) grouped under YAP and CHILL labels, unread badge on TEXT.
+
+**MSG_LIST** — Header bar `<` · TEXT · `+` with active invert on focus. Conversation rows with name, preview, timestamp, chevron.
+
+**MSG_THREAD** — AIM-style `Name: message body`. Centered time separators. Header `<` · contact name · `i`.
 
 ### **Running it**
-```
-# On Radxa (hardware)
-export TWILIO_SID=... TWILIO_TOKEN=... TWILIO_NUMBER=...
-python3 spi_bridge/kyphone_app.py
+```bash
+# On Radxa (hardware — auto-starts via systemd, or manually:)
+sudo systemctl restart kyphone
 
 # On Mac (simulator)
 pip3 install twilio pygame
@@ -28,9 +38,27 @@ python3 spi_bridge/kyphone_app.py --sim
 ```
 
 ### **What's next**
-- Improve messaging flow (compose, reply, contacts)
-- CALL / READ / LISTEN screen placeholders → real implementations
-- Physical BlackBerry Q10 keyboard arriving May
+- Address book / contacts (replace raw phone numbers with names)
+- Compose new message screen (`+` button)
+- SIM7600G-H integration (direct AT commands, replace Twilio)
+- BlackBerry Q10 keyboard integration
+- Enclosure + battery design
+
+---
+
+## **Development Log**
+
+### **April 2026: UI Polish + Dev Workflow**
+
+Full UI redesign pass and developer tooling improvements.
+
+- MSG_THREAD redesigned to AIM-style (`Name: body`) — cleaner than bubble approach for E-ink
+- MSG_LIST header navigation: `<` and `+` buttons focus and invert on keypress
+- ASCII art added to HOME screen (top-right corner)
+- Partial refresh on MSG_LIST navigation keypresses
+- VS Code Remote SSH configured for direct editing on Radxa
+- Payload expanded from 128 → 256 bytes; SCLK timeout adjusted to 1.5s
+- SIM7600G-H 4G USB dongle ordered to replace Twilio
 
 ---
 
@@ -143,6 +171,14 @@ Solved the SPI communication layer completely. Key breakthroughs:
 * **Partial accumulation:** The Rockchip SPI DMA at 5kHz delivers all 272 bits in one 54ms burst, but we accumulated bits across multiple attempts while debugging. Current firmware never resets `bit_counter` on a partial timeout — it just waits for more bits.
 * **30-second bottleneck diagnosed:** `timing_baseline.py` revealed the Radxa sends all bits in 54ms, but the firmware waited 30 seconds before evaluating. Reducing the timeout to 500ms dropped end-to-end latency from ~2 minutes to 1.7 seconds.
 * **Payload expanded:** 34 → 128 bytes. Enables full SMS message display.
+
+---
+
+## Archive — Pre-SPI Era (Aug–Nov 2025)
+
+*In mid-2025 the project used a completely different architecture: an Android emulator running a KyPhone UI app, with a Python proxy bridging screen data over TCP to the Inkplate via USB serial. The project pivoted to the current native Linux/SPI approach in early 2026. Entries below document that phase in full.*
+
+---
 
 ### **March 15, 2026: Phase 1 - The SPI Handshake Nightmare (UNSTABLE)**
 
