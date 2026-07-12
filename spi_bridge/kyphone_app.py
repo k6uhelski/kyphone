@@ -27,9 +27,12 @@ if not all([ACCOUNT_SID, AUTH_TOKEN, TWILIO_NUMBER]):
         sys.exit(1)
 
 # --- Contacts ---
-CONTACTS = {
-    # '+12125550001': 'Kyle',
-}
+_contacts_path = os.path.join(os.path.dirname(__file__), '..', 'data', 'contacts.json')
+try:
+    with open(_contacts_path) as _f:
+        CONTACTS = json.load(_f)
+except FileNotFoundError:
+    CONTACTS = {}
 
 # --- SPI / Handshake Config ---
 CHIP = 'gpiochip3'
@@ -37,7 +40,7 @@ HANDSHAKE_LINE = 21
 SPI_BUS = 3
 SPI_DEV = 0
 SPI_SPEED_HZ = 5000
-PAYLOAD_BYTES = 256
+PAYLOAD_BYTES = 128
 
 SMS_DISPLAY_DURATION = 10   # seconds to show SMS before returning to home
 CLOCK_UPDATE_INTERVAL = 60  # seconds between home screen refreshes
@@ -173,15 +176,13 @@ def push_msg_list(selected=0, fast=False):
     if not conversations:
         push_screen("MSG_LIST|0|No messages yet")
         return
-    # Clamp positive indices; negative values mean header focus (-1=<, -2=+)
-    if selected >= 0:
-        selected = max(0, min(selected, len(conversations) - 1))
+    # Clamp selected to valid range
+    selected = max(0, min(selected, len(conversations) - 1))
     parts = [str(selected)]
     for m in conversations:
-        name = m['name'][:10]
+        name = format_name(m["sender"])[:10]
         preview = m['body'][:18]
-        time_str = m.get('time', '')
-        parts.append(f"{name}\xb7{preview}\xb7{time_str}")
+        parts.append(f"{name}\xb7{preview}")  # middle dot separator
     prefix = "MSG_LIST_FAST" if fast else "MSG_LIST"
     push_screen(prefix + "|" + "|".join(parts))
 
@@ -194,8 +195,7 @@ def push_msg_thread(sender):
     parts = [name]
     for m in thread[-5:]:  # last 5 messages
         prefix = "Y" if m['sender'] == TWILIO_NUMBER else "R"
-        time_str = m.get('time', '')
-        parts.append(f"{prefix}:{time_str}~{m['body'][:28]}")
+        parts.append(f"{prefix}:{m['body'][:32]}")
     push_screen("MSG_THREAD|" + "|".join(parts))
 
 
@@ -256,40 +256,18 @@ def handle_key(keycode):
                 navigate_to('MSG_LIST', selected=0)
 
     elif screen == 'MSG_LIST':
-        if keycode == 'KEY_UP':
-            new_sel = -1 if selected <= 0 else selected - 1
+        if keycode in ('KEY_DOWN', 'KEY_RIGHT'):
+            new_sel = min(selected + 1, max(0, len(conversations) - 1))
             with state['lock']:
                 state['nav']['selected'] = new_sel
             push_msg_list(new_sel, fast=True)
-        elif keycode == 'KEY_DOWN':
-            new_sel = 0 if selected < 0 else min(selected + 1, max(0, len(conversations) - 1))
-            with state['lock']:
-                state['nav']['selected'] = new_sel
-            push_msg_list(new_sel, fast=True)
-        elif keycode == 'KEY_LEFT':
-            if selected < 0:
-                new_sel = -1  # always land on <
-            else:
-                new_sel = max(selected - 1, 0)
-            with state['lock']:
-                state['nav']['selected'] = new_sel
-            push_msg_list(new_sel, fast=True)
-        elif keycode == 'KEY_RIGHT':
-            if selected == -1:
-                new_sel = -2  # < → +
-            elif selected == -2:
-                new_sel = -2  # stay at +
-            else:
-                new_sel = min(selected + 1, max(0, len(conversations) - 1))
+        elif keycode in ('KEY_UP', 'KEY_LEFT'):
+            new_sel = max(selected - 1, 0)
             with state['lock']:
                 state['nav']['selected'] = new_sel
             push_msg_list(new_sel, fast=True)
         elif keycode == 'KEY_ENTER':
-            if selected == -1:
-                navigate_to('HOME')
-            elif selected == -2:
-                pass  # TODO: compose new message
-            elif conversations and 0 <= selected < len(conversations):
+            if conversations and selected < len(conversations):
                 sender = conversations[selected]['sender']
                 navigate_to('MSG_THREAD', selected=selected, thread_sender=sender)
         elif keycode in ('KEY_BACKSPACE', 'KEY_ESC'):
@@ -366,7 +344,6 @@ def sms_loop():
                         'name': name,
                         'body': msg.body,
                         'read': False,
-                        'time': datetime.now().strftime("%-I:%M %p"),
                     })
                     save_messages()
                 print(f"\n[NEW SMS] {name}: {msg.body}")
@@ -392,7 +369,6 @@ def send_reply(to_number, body):
                 'name': 'You',
                 'body': body,
                 'read': True,
-                'time': datetime.now().strftime("%-I:%M %p"),
             })
         print(f"  → sent: {body} (SID: {msg.sid})")
     except Exception as e:
@@ -411,16 +387,11 @@ def main():
                 state['last_sid'] = recent[0].sid
             inbound = [m for m in recent if m.direction == 'inbound']
             for msg in reversed(inbound):  # oldest first
-                try:
-                    time_str = msg.date_sent.strftime("%-I:%M %p") if msg.date_sent else ''
-                except Exception:
-                    time_str = ''
                 state['messages'].append({
                     'sender': msg.from_,
                     'name': format_name(msg.from_),
                     'body': msg.body,
                     'read': True,
-                    'time': time_str,
                 })
             if inbound:
                 save_messages()

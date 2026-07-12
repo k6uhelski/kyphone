@@ -15,11 +15,14 @@ if not all([ACCOUNT_SID, AUTH_TOKEN, TWILIO_NUMBER]):
     print("Error: set TWILIO_SID, TWILIO_TOKEN, and TWILIO_NUMBER env vars.")
     sys.exit(1)
 
-# --- Optional contacts (phone number → name) ---
 CONTACTS = {
-    # '+12125550001': 'Kyle',
+      '+18315666112': 'Katie',
+      '+17347756310': 'Joe',
+      '+17342775621': 'Scott',
+      '+18102415499': 'Pip',
+      '+12488549609': 'Ana',
+      '+16026142858': 'Bridget',
 }
-
 # --- SPI / Handshake Config ---
 CHIP = 'gpiochip3'
 HANDSHAKE_LINE = 21

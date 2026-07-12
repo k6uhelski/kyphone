@@ -29,4 +29,5 @@ __pycache__/
 .env
 *.tmp
 data/
+!data/contacts.example.json
 spi_bridge/tests/Signal_Detector_34.ino
