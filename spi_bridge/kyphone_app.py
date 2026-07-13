@@ -39,8 +39,8 @@ CHIP = 'gpiochip3'
 HANDSHAKE_LINE = 21
 SPI_BUS = 3
 SPI_DEV = 0
-SPI_SPEED_HZ = 5000
-PAYLOAD_BYTES = 128
+SPI_SPEED_HZ = 10000
+PAYLOAD_BYTES = 256
 
 SMS_DISPLAY_DURATION = 10   # seconds to show SMS before returning to home
 CLOCK_UPDATE_INTERVAL = 60  # seconds between home screen refreshes

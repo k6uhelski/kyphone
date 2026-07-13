@@ -25,6 +25,7 @@ volatile uint32_t last_cs_time = 0;
 // Debug Counters
 volatile uint32_t debug_cs_falling = 0;
 volatile uint32_t debug_sclk_total = 0;
+volatile uint32_t first_sclk_time = 0;
 
 // --- RECLAIM SPI PINS FROM INKPLATE LIBRARY ---
 void reclaim_spi_pins_for_gpio() {
@@ -56,6 +57,7 @@ void reclaim_spi_pins_for_gpio() {
 void IRAM_ATTR spi_clock_isr() {
     uint32_t now = micros();
     debug_sclk_total++;
+    if (bit_counter == 0) first_sclk_time = now;
     last_sclk_time = now;
 
     if (bit_counter == 0) {
@@ -460,21 +462,15 @@ void render_msg_thread(char* data) {
             y += 16;
         }
 
-        // AIM style: "Name: body" — name portion bold via textSize 2
+        // AIM style: "Name: body" printed as one string to avoid cursor collision
         const char* label = (align == 'Y') ? "Me" : name_buf;
-        char prefix[36] = "";
-        snprintf(prefix, sizeof(prefix), "%s: ", label);
-        int prefix_w = strlen(prefix) * 12;  // textSize 2: 12px per char
+        char full_msg[120] = "";
+        snprintf(full_msg, sizeof(full_msg), "%s: %s", label, body);
 
         display.setTextSize(2);
         display.setCursor(margin, y);
-        display.print(prefix);
-
-        // Body — word wrap starting after prefix
-        const int max_body_w = 600 - margin - prefix_w;
-        const int body_x = margin + prefix_w;
-        render_wrapped(body, false, &y, line_h);  // reuse render_wrapped, starts at current y
-
+        display.print(full_msg);
+        y += line_h;
         y += 4;  // gap between messages
     }
 }
@@ -503,13 +499,10 @@ void setup() {
     Serial.println("\n--- KYPHONE SPI: V4 (NOISE CANCELLER) ---");
 
     display.begin();
-    display.einkOff(); 
-    
+    display.einkOff();
+
     reclaim_spi_pins_for_gpio();
 
-    display.pinModeIO(PIN_HANDSHAKE, OUTPUT);
-    display.digitalWriteIO(PIN_HANDSHAKE, LOW);
-    
     pinMode(PIN_SCLK, INPUT_PULLDOWN);
     pinMode(PIN_MOSI, INPUT_PULLDOWN);
 
@@ -517,41 +510,53 @@ void setup() {
     // CS ISR disabled: noise on Pin 15 resets bit_counter mid-transfer.
     // SCLK-timeout framing handles message boundaries instead.
 
-    display.digitalWriteIO(PIN_HANDSHAKE, HIGH);
+    display.expander2.pinMode(8, OUTPUT, true);
+    display.expander2.digitalWrite(8, LOW, true);
+    delay(10);
+    display.expander2.digitalWrite(8, HIGH, true);
+    Serial.println(">> Handshake set HIGH");
     Serial.println(">> SYSTEM READY. Send message now.");
 }
 
 void loop() {
     static uint32_t last_debug = 0;
     uint32_t now = millis();
-    uint32_t now_us = micros();
+
+    // Atomic snapshot — prevents ISR updating last_sclk_time AFTER now_us is captured,
+    // which causes unsigned underflow (now_us - last_sclk_time wraps to ~4B > 1500000).
+    noInterrupts();
+    uint32_t snap_sclk  = last_sclk_time;
+    uint32_t snap_first = first_sclk_time;
+    uint16_t snap_bits  = bit_counter;
+    uint32_t now_us     = micros();
+    interrupts();
 
     if (now - last_debug > 2000) {
         last_debug = now;
         int cs_val = digitalRead(PIN_CS);
         Serial.printf("DEBUG [%lums]: SCLK_Total: %d | Bits: %d | CS: %d\n",
-            millis(), debug_sclk_total, bit_counter, cs_val);
+            millis(), debug_sclk_total, snap_bits, cs_val);
     }
 
     // Framing: 1500ms silence = end of message (410ms transfer at 5kHz for 256 bytes + margin)
-    if (!transfer_complete && bit_counter > 0) {
-        if (now_us - last_sclk_time > 1500000) {
-            if (bit_counter == TOTAL_BITS) {
+    if (!transfer_complete && snap_bits > 0) {
+        if (now_us - snap_sclk > 600000) {
+            uint32_t elapsed_us = now_us - snap_first;
+            if (snap_bits == TOTAL_BITS) {
                 transfer_complete = true;
-            } else if (bit_counter > TOTAL_BITS) {
-                Serial.printf(">> OVERFLOW: %d bits. Resetting.\n", bit_counter);
+                Serial.printf(">> COMPLETE: %d bits in %lums\n", snap_bits, elapsed_us / 1000);
+            } else if (snap_bits > TOTAL_BITS) {
+                Serial.printf(">> OVERFLOW: %d bits in %lums. Resetting.\n", snap_bits, elapsed_us / 1000);
                 bit_counter = 0;
             } else {
-                // Partial chunk — keep accumulating, don't reset.
-                // Reset timer so this doesn't re-fire every loop() iteration.
-                Serial.printf(">> PARTIAL: %d/%d bits. Waiting for rest...\n", bit_counter, TOTAL_BITS);
-                last_sclk_time = micros();
+                Serial.printf(">> PARTIAL: %d/%d bits in %lums. Resetting.\n", snap_bits, TOTAL_BITS, elapsed_us / 1000);
+                bit_counter = 0;
             }
         }
     }
 
     if (transfer_complete) {
-        display.digitalWriteIO(PIN_HANDSHAKE, LOW);
+        display.expander2.digitalWrite(8, LOW, true);
         
         uint8_t local_buf[PAYLOAD_BYTES];
         memcpy(local_buf, (void*)rx_buf, PAYLOAD_BYTES);
@@ -655,6 +660,6 @@ void loop() {
             Serial.printf("Raw Data: %02X %02X %02X %02X\n", local_buf[0], local_buf[1], local_buf[2], local_buf[3]);
         }
 
-        display.digitalWriteIO(PIN_HANDSHAKE, HIGH);
+        display.expander2.digitalWrite(8, HIGH, true);
     }
 }
