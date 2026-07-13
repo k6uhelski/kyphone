@@ -123,18 +123,18 @@ void render_home(char* data) {
         strncpy(time_str, data, sizeof(time_str) - 1);
     }
 
-    // ASCII art — top right, textSize 1 = 6px wide x 8px tall per char
+    // ASCII art — top right, textSize 2 = 12px wide x 16px tall per char
     const char* cat[] = {
         "   )\\._.,--....,'``.",
         "  /,   _.. \\   _\\  (`._ ,.",
         " `._.-(,_..'--(,_..'`-.;.'",
     };
-    // longest line is 30 chars → 180px wide; right-align with 6px margin
-    display.setTextSize(1);
+    display.setTextSize(2);
     for (int ci = 0; ci < 3; ci++) {
-        int lw = strlen(cat[ci]) * 6;
-        display.setCursor(600 - lw - 6, 6 + ci * 9);
-        display.print(cat[ci]);
+        int lw = strlen(cat[ci]) * 12;
+        int cx = 600 - lw - 6, cy = 6 + ci * 18;
+        display.setCursor(cx, cy);     display.print(cat[ci]);
+        display.setCursor(cx + 1, cy); display.print(cat[ci]);
     }
 
     // Clock + date vertically centered above button row (y=35 to ~520)
@@ -153,44 +153,10 @@ void render_home(char* data) {
     display.setCursor((600 - date_w) / 2, start_y + 80 + 24);
     display.print(date_str);
 
-    // YAP / CHILL inline separator labels (textSize 1 = 6px wide per char)
-    int line_y = 526;
-    int pad = 4;
-
-    // YAP spans [0, 292]  (TEXT btn right edge: 150+142)
-    {
-        int lx = 0, rx = 292;
-        int lw = 3 * 6; // "YAP" = 3 chars
-        int label_x = lx + (rx - lx - lw) / 2;
-        int label_y = line_y - 8;
-        display.drawLine(lx, line_y - 4, lx, line_y + 4, BLACK);
-        display.drawLine(rx, line_y - 4, rx, line_y + 4, BLACK);
-        display.drawLine(lx, line_y, label_x - pad, line_y, BLACK);
-        display.drawLine(label_x + lw + pad, line_y, rx, line_y, BLACK);
-        display.setTextSize(1);
-        display.setCursor(label_x, label_y);
-        display.print("YAP");
-    }
-
-    // CHILL spans [308, 599]  (READ btn left edge to screen edge)
-    {
-        int lx = 308, rx = 599;
-        int lw = 5 * 6; // "CHILL" = 5 chars
-        int label_x = lx + (rx - lx - lw) / 2;
-        int label_y = line_y - 8;
-        display.drawLine(lx, line_y - 4, lx, line_y + 4, BLACK);
-        display.drawLine(rx, line_y - 4, rx, line_y + 4, BLACK);
-        display.drawLine(lx, line_y, label_x - pad, line_y, BLACK);
-        display.drawLine(label_x + lw + pad, line_y, rx, line_y, BLACK);
-        display.setTextSize(1);
-        display.setCursor(label_x, label_y);
-        display.print("CHILL");
-    }
-
     // 4 buttons: TEXT, CALL, READ, LISTEN
     const char* buttons[] = {"TEXT", "CALL", "READ", "LISTEN"};
-    int btn_positions[] = {0, 150, 308, 458};
-    int btn_w = 142, btn_h = 65, btn_y = 535;
+    int btn_positions[] = {0, 150, 300, 450};
+    int btn_w = 150, btn_h = 65, btn_y = 535;
 
     for (int i = 0; i < 4; i++) {
         int bx = btn_positions[i];
@@ -207,8 +173,8 @@ void render_home(char* data) {
             display.setTextColor(BLACK);
         }
         display.setTextSize(2);
-        display.setCursor(lx, ly);
-        display.print(buttons[i]);
+        display.setCursor(lx, ly);     display.print(buttons[i]);
+        display.setCursor(lx + 1, ly); display.print(buttons[i]);
         display.setTextColor(BLACK);
 
         // Unread badge on TEXT button (index 0)
@@ -317,10 +283,10 @@ void render_msg_list(char* data, int selected) {
             display.setTextColor(WHITE);
         }
 
-        // Name — textSize 3, left
+        // Name — textSize 3, left, bold
         display.setTextSize(3);
-        display.setCursor(margin, y + 8);
-        display.print(name_buf);
+        display.setCursor(margin, y + 8);     display.print(name_buf);
+        display.setCursor(margin + 1, y + 8); display.print(name_buf);
 
         // Chevron — textSize 2, right, vertically centered
         int chevron_x = 600 - margin - 12; // 12 = 1 char at textSize 2
@@ -416,12 +382,12 @@ void render_msg_thread(char* data) {
     display.setTextSize(3);
     int name_x = (600 - (int)strlen(name_buf) * 18) / 2;
     if (name_x < 10) name_x = 10;
-    display.setCursor(name_x, 10);
-    display.print(name_buf);
+    display.setCursor(name_x, 10);     display.print(name_buf);
+    display.setCursor(name_x + 1, 10); display.print(name_buf);
     display.drawLine(0, 46, 600, 46, BLACK);
 
     int y = 56;
-    const int line_h = 22;   // textSize 2: 16px + 6px gap
+    const int line_h = 32;   // textSize 3: 24px + 8px gap
     const int margin = 16;
     char last_time[12] = "";
 
@@ -462,16 +428,46 @@ void render_msg_thread(char* data) {
             y += 16;
         }
 
-        // AIM style: "Name: body" printed as one string to avoid cursor collision
+        // AIM style: prefix on first line, body word-wrapped with continuation indent
         const char* label = (align == 'Y') ? "Me" : name_buf;
-        char full_msg[120] = "";
-        snprintf(full_msg, sizeof(full_msg), "%s: %s", label, body);
+        char prefix_str[24] = "";
+        snprintf(prefix_str, sizeof(prefix_str), "%s: ", label);
+        int prefix_px = (int)strlen(prefix_str) * 18; // textSize 3: 18px/char
+        int body_x = margin + prefix_px;
+        int chars_per_line = (600 - body_x) / 18;
+        if (chars_per_line < 1) chars_per_line = 1;
 
-        display.setTextSize(2);
-        display.setCursor(margin, y);
-        display.print(full_msg);
+        display.setTextSize(3);
+        display.setCursor(margin, y);     display.print(prefix_str);
+        display.setCursor(margin + 1, y); display.print(prefix_str);
+
+        char wbuf[48] = "";
+        const char* p = body;
+        while (*p != '\0') {
+            while (*p == ' ') p++;
+            if (*p == '\0') break;
+            const char* ws = p;
+            while (*p && *p != ' ') p++;
+            int wlen = (int)(p - ws);
+            int blen = (int)strlen(wbuf);
+            bool fits = (blen == 0) ? (wlen <= chars_per_line)
+                                    : (blen + 1 + wlen <= chars_per_line);
+            if (fits) {
+                if (blen > 0 && blen < (int)sizeof(wbuf) - 2) strcat(wbuf, " ");
+                int avail = (int)sizeof(wbuf) - (int)strlen(wbuf) - 1;
+                strncat(wbuf, ws, avail < wlen ? avail : wlen);
+            } else {
+                display.setCursor(body_x, y);
+                display.print(wbuf);
+                y += line_h;
+                memset(wbuf, 0, sizeof(wbuf));
+                strncat(wbuf, ws, wlen < (int)sizeof(wbuf) - 1 ? wlen : (int)sizeof(wbuf) - 1);
+            }
+        }
+        display.setCursor(body_x, y);
+        display.print(wbuf);
         y += line_h;
-        y += 4;  // gap between messages
+        y += 4;
     }
 }
 

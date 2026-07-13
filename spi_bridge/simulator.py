@@ -25,7 +25,7 @@ def _get_font(px_size, bold=False, clock=False):
     key = (px_size, bold, clock)
     if key not in _FONT_CACHE:
         name = CLOCK_FONT if clock else 'courier'
-        _FONT_CACHE[key] = pygame.font.SysFont(name, px_size, bold=False)
+        _FONT_CACHE[key] = pygame.font.SysFont(name, px_size, bold=bold)
     return _FONT_CACHE[key]
 
 
@@ -110,16 +110,11 @@ class Simulator:
         img = font.render(str(text), True, color)
         self._surface.blit(img, (x, y))
 
-    def _text_centered(self, text, y, text_size, color=BLACK, clock=False):
-        if clock:
-            font = _get_font(text_size * 8, bold=True, clock=True)
-            w = font.size(str(text))[0]
-            x = (self.WIDTH - w) // 2
-            self._surface.blit(font.render(str(text), True, color), (x, y))
-        else:
-            w = len(str(text)) * self._char_w(text_size)
-            x = (self.WIDTH - w) // 2
-            self._text(text, x, y, text_size, color)
+    def _text_centered(self, text, y, text_size, color=BLACK, clock=False, bold=False):
+        font = _get_font(text_size * 8, bold=(bold or clock), clock=clock)
+        w = font.size(str(text))[0]
+        x = (self.WIDTH - w) // 2
+        self._surface.blit(font.render(str(text), True, color), (x, y))
 
     def _line(self, y):
         pygame.draw.line(self._surface, BLACK, (0, y), (self.WIDTH, y), 1)
@@ -196,31 +191,10 @@ class Simulator:
         self._text_centered(time_str, start_y, 10, clock=True)
         self._text_centered(date_str, start_y + 80 + 24, 3)
 
-        # YAP / CHILL inline labels — YAP spans TEXT+CALL, CHILL spans READ+LISTEN
-        # btn_positions = [0, 150, 308, 458], btn_w = 142
-        yap_rx   = 150 + 142   # right edge of CALL = 292
-        chill_lx = 308          # left edge of READ
-        line_y = 526
-        pad = 4
-        for label, lx, rx in [('YAP', 0, yap_rx), ('CHILL', chill_lx, 599)]:
-            font = _get_font(11)
-            lw = font.size(label)[0]
-            label_x = lx + (rx - lx - lw) // 2
-            label_y = line_y - 9
-            # End caps
-            pygame.draw.line(self._surface, BLACK, (lx, line_y - 4), (lx, line_y + 4), 1)
-            pygame.draw.line(self._surface, BLACK, (rx, line_y - 4), (rx, line_y + 4), 1)
-            # Line left of label
-            pygame.draw.line(self._surface, BLACK, (lx, line_y), (label_x - pad, line_y), 1)
-            # Label
-            self._surface.blit(font.render(label, True, BLACK), (label_x, label_y))
-            # Line right of label
-            pygame.draw.line(self._surface, BLACK, (label_x + lw + pad, line_y), (rx, line_y), 1)
-
-        # 4 buttons — 8px gap between YAP and CHILL groups
+        # 4 buttons — flush edge-to-edge, 150px each
         buttons = ['TEXT', 'CALL', 'READ', 'LISTEN']
-        btn_positions = [0, 150, 308, 458]
-        btn_w, btn_h, btn_y = 142, 65, 535
+        btn_positions = [0, 150, 300, 450]
+        btn_w, btn_h, btn_y = 150, 65, 535
         for i, (label, bx) in enumerate(zip(buttons, btn_positions)):
             cw = len(label) * self._char_w(2)
             lx = bx + (btn_w - cw) // 2
@@ -229,9 +203,11 @@ class Simulator:
             if selected:
                 pygame.draw.rect(self._surface, BLACK, (bx, btn_y, btn_w, btn_h))
                 self._text(label, lx, ly, 2, WHITE)
+                self._text(label, lx + 1, ly, 2, WHITE)
             else:
                 pygame.draw.rect(self._surface, BLACK, (bx, btn_y, btn_w, btn_h), 2)
                 self._text(label, lx, ly, 2, BLACK)
+                self._text(label, lx + 1, ly, 2, BLACK)
 
             # Unread badge on TEXT button (index 0)
             if i == 0 and unread > 0:
@@ -285,8 +261,8 @@ class Simulator:
             if i == sel:
                 pygame.draw.rect(self._surface, BLACK, (0, y, self.WIDTH, row_h))
 
-            # Name — textSize 3, left
-            self._text(name, margin, y + 8, 3, fg)
+            # Name — textSize 3, left, bold
+            self._text(name, margin, y + 8, 3, fg, bold=True)
 
             # Chevron — textSize 2, right, vertically centered
             chevron_w = self._char_w(2)
@@ -313,15 +289,15 @@ class Simulator:
 
         # Header: < NAME i
         self._text('<', 16, 10, 3)
-        self._text_centered(name, 10, 3)
+        self._text_centered(name, 10, 3, bold=True)
         self._text('i', self.WIDTH - 16 - self._char_w(3), 10, 3)
         self._line(46)
 
         y = 56
-        ts = 2
-        line_h = ts * 8 + 6
+        ts = 3
+        line_h = 32
         margin = 16
-        max_w = self.WIDTH - margin * 2
+        max_w = self.WIDTH - margin
         last_time = None
 
         for msg in msgs:

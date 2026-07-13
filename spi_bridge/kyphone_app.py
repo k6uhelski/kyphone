@@ -155,9 +155,9 @@ def get_conversations():
     with state['lock']:
         seen = {}
         for m in reversed(state['messages']):
-            if m['sender'] not in seen:
+            if m['sender'] not in seen and m['body'].strip():
                 seen[m['sender']] = m
-    return list(seen.values())[:4]
+    return list(seen.values())[:7]
 
 
 def push_home(fast=False):
@@ -194,6 +194,8 @@ def push_msg_thread(sender):
     name = format_name(sender)
     parts = [name]
     for m in thread[-5:]:  # last 5 messages
+        if not m['body'].strip():
+            continue
         prefix = "Y" if m['sender'] == TWILIO_NUMBER else "R"
         parts.append(f"{prefix}:{m['body'][:32]}")
     push_screen("MSG_THREAD|" + "|".join(parts))
