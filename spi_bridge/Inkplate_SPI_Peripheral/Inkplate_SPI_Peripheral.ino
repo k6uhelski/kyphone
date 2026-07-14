@@ -17,6 +17,7 @@ Inkplate display(INKPLATE_1BIT);
 #define TOTAL_BITS (PAYLOAD_BYTES * 8)
 
 volatile uint8_t rx_buf[PAYLOAD_BYTES];
+uint8_t page_transition_count = 0;  // full refresh every 10 page changes
 volatile uint16_t bit_counter = 0;
 volatile bool transfer_complete = false;
 volatile uint32_t last_sclk_time = 0;
@@ -141,9 +142,9 @@ void render_home(char* data) {
     int total_h = 80 + 24 + 24;
     int start_y = 35 + (475 - total_h) / 2;
 
-    // Clock — textSize 10 = 60px wide per char, 80px tall
-    display.setTextSize(10);
-    int clock_w = strlen(time_str) * 60;
+    // Clock — textSize 8 = 48px wide per char, 64px tall
+    display.setTextSize(8);
+    int clock_w = strlen(time_str) * 48;
     display.setCursor((600 - clock_w) / 2, start_y);
     display.print(time_str);
 
@@ -645,7 +646,14 @@ void loop() {
                     } else {
                         render_sms(text);
                     }
-                    display.display();
+                    page_transition_count++;
+                    if (page_transition_count >= 10) {
+                        display.display();
+                        page_transition_count = 0;
+                        Serial.println(">> Full refresh (ghost clear)");
+                    } else {
+                        display.partialUpdate();
+                    }
                     delay(100);
                     display.einkOff();
                     reclaim_spi_pins_for_gpio();

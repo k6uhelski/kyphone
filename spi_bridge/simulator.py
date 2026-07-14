@@ -185,11 +185,11 @@ class Simulator:
             self._surface.blit(img, (cat_x, 6 + i * lh))
 
         # Clock + date vertically centered in space above button row (y=35..510)
-        total_h = 80 + 24 + 24
+        total_h = 64 + 24 + 24
         start_y = 35 + (475 - total_h) // 2
 
-        self._text_centered(time_str, start_y, 10, clock=True)
-        self._text_centered(date_str, start_y + 80 + 24, 3)
+        self._text_centered(time_str, start_y, 8, clock=True)
+        self._text_centered(date_str, start_y + 64 + 24, 3)
 
         # 4 buttons — flush edge-to-edge, 150px each
         buttons = ['TEXT', 'CALL', 'READ', 'LISTEN']
