@@ -18,6 +18,7 @@ Inkplate display(INKPLATE_1BIT);
 
 volatile uint8_t rx_buf[PAYLOAD_BYTES];
 uint8_t page_transition_count = 0;  // full refresh every 10 page changes
+char current_screen[32] = "BOOT";
 volatile uint16_t bit_counter = 0;
 volatile bool transfer_complete = false;
 volatile uint32_t last_sclk_time = 0;
@@ -531,8 +532,8 @@ void loop() {
     if (now - last_debug > 2000) {
         last_debug = now;
         int cs_val = digitalRead(PIN_CS);
-        Serial.printf("DEBUG [%lums]: SCLK_Total: %d | Bits: %d | CS: %d\n",
-            millis(), debug_sclk_total, snap_bits, cs_val);
+        Serial.printf("DEBUG [%lums]: SCLK_Total: %d | Bits: %d | CS: %d | Screen: %s\n",
+            millis(), debug_sclk_total, snap_bits, cs_val, current_screen);
     }
 
     // Framing: 1500ms silence = end of message (410ms transfer at 5kHz for 256 bytes + margin)
@@ -603,6 +604,7 @@ void loop() {
                 Serial.printf("SUCCESS! MSG: %s\n", text);
 
                 if (strncmp(text, "HOME_FAST|", 10) == 0) {
+                    strncpy(current_screen, "HOME", sizeof(current_screen) - 1);
                     display.clearDisplay();
                     render_home(text + 10);
                     display.partialUpdate();
@@ -610,6 +612,7 @@ void loop() {
                     display.einkOff();
                     reclaim_spi_pins_for_gpio();
                 } else if (strncmp(text, "MSG_LIST_FAST|", 14) == 0) {
+                    strncpy(current_screen, "MSG_LIST", sizeof(current_screen) - 1);
                     char* after = text + 14;
                     int sel = 0;
                     char* idx_end = strchr(after, '|');
@@ -628,8 +631,10 @@ void loop() {
                 } else {
                     display.clearDisplay();
                     if (strncmp(text, "HOME|", 5) == 0) {
+                        strncpy(current_screen, "HOME", sizeof(current_screen) - 1);
                         render_home(text + 5);
                     } else if (strncmp(text, "MSG_LIST|", 9) == 0) {
+                        strncpy(current_screen, "MSG_LIST", sizeof(current_screen) - 1);
                         // First token after MSG_LIST| is the selected index
                         char* after = text + 9;
                         int sel = 0;
@@ -642,8 +647,15 @@ void loop() {
                         }
                         render_msg_list(after, sel);
                     } else if (strncmp(text, "MSG_THREAD|", 11) == 0) {
+                        // Extract contact name for log
+                        char thread_name[32] = "";
+                        const char* tn = text + 11;
+                        const char* tn_end = strchr(tn, '|');
+                        strncpy(thread_name, tn, tn_end ? tn_end - tn : sizeof(thread_name) - 1);
+                        snprintf(current_screen, sizeof(current_screen), "MSG_THREAD(%s)", thread_name);
                         render_msg_thread(text + 11);
                     } else {
+                        strncpy(current_screen, "SMS", sizeof(current_screen) - 1);
                         render_sms(text);
                     }
                     page_transition_count++;

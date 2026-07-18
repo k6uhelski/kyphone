@@ -19,6 +19,10 @@ node_modules
 *.apk
 *.aab
 
+# Machine-specific scripts
+flash_macmini.sh
+spi_bridge/serial_log_macmini.py
+
 # Local and Agent Files
 .gemini/
 work_log.md
