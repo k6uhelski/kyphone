@@ -235,4 +235,4 @@ KyPhone is more than a technical exercise; it is a revolt against the attention 
 
 *   **The Problem:** Smartphones are designed to keep us connected to people who *aren't* around, often at the expense of those who *are*. They are purveyors of "social time" that cannibalize real-world presence.
 *   **The Vision:** A "Minimal Phone" (not just a "Dumb Phone"). Moving away from the sterile black/white brick design toward something expressive, intentional, and worth owning.
-*   **Current Priority:** OS 0.1 is complete (6-screen state machine, simulator, firmware renderers, 38 tests). Next: flash firmware to Inkplate, deploy `kyphone_os.py` on Radxa, smoke-test the full texts flow on hardware.
+*   **Current Priority:** OS 0.1 is deployed and live on hardware — firmware flashed to the Inkplate, Radxa systemd service switched to `kyphone_os.py`, hardware bring-up complete. Next: iterate on real-hardware feedback (timing, framing reliability, Phase 2 calls scoping).
