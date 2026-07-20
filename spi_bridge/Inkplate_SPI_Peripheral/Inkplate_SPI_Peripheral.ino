@@ -105,14 +105,14 @@ void render_home(char* data) {
 
     char* p1 = strchr(data, '|');
     if (p1 != NULL) {
-        strncpy(time_str, data, p1 - data);
+        snprintf(time_str, sizeof(time_str), "%.*s", (int)(p1 - data), data);
         char* p2 = strchr(p1 + 1, '|');
         if (p2 != NULL) {
-            strncpy(date_str, p1 + 1, p2 - p1 - 1);
+            snprintf(date_str, sizeof(date_str), "%.*s", (int)(p2 - p1 - 1), p1 + 1);
             char* p3 = strchr(p2 + 1, '|');
             if (p3 != NULL) {
                 char unread_buf[8] = "";
-                strncpy(unread_buf, p2 + 1, p3 - p2 - 1);
+                snprintf(unread_buf, sizeof(unread_buf), "%.*s", (int)(p3 - p2 - 1), p2 + 1);
                 unread = atoi(unread_buf);
                 home_sel = atoi(p3 + 1);
             } else {
@@ -155,8 +155,8 @@ void render_home(char* data) {
     display.setCursor((600 - date_w) / 2, start_y + 80 + 24);
     display.print(date_str);
 
-    // 4 buttons: TEXT, CALL, READ, LISTEN
-    const char* buttons[] = {"TEXT", "CALL", "READ", "LISTEN"};
+    // 4 buttons: Texts, Calls, Books, Music
+    const char* buttons[] = {"Texts", "Calls", "Books", "Music"};
     int btn_positions[] = {0, 150, 300, 450};
     int btn_w = 150, btn_h = 65, btn_y = 535;
 
@@ -225,10 +225,10 @@ void render_msg_list(char* data, int selected) {
         display.print("<");
     }
 
-    // TEXT centered (4 chars * 18px = 72px wide)
+    // TEXTS centered (5 chars * 18px = 90px wide)
     display.setTextColor(BLACK);
-    display.setCursor((600 - 72) / 2, 10);
-    display.print("TEXT");
+    display.setCursor((600 - 90) / 2, 10);
+    display.print("TEXTS");
 
     // + right — invert when selected == -2
     int plus_x = 600 - margin - 18;
@@ -262,15 +262,15 @@ void render_msg_list(char* data, int selected) {
 
         // Parse name·preview·time
         char name_buf[16]    = "";
-        char preview_buf[24] = "";
+        char preview_buf[50] = "";
         char time_buf[12]    = "";
 
         char* dot1 = strchr(entry_buf, '\xB7');
         if (dot1 != NULL) {
-            strncpy(name_buf, entry_buf, dot1 - entry_buf);
+            snprintf(name_buf, sizeof(name_buf), "%.*s", (int)(dot1 - entry_buf), entry_buf);
             char* dot2 = strchr(dot1 + 1, '\xB7');
             if (dot2 != NULL) {
-                strncpy(preview_buf, dot1 + 1, dot2 - dot1 - 1);
+                snprintf(preview_buf, sizeof(preview_buf), "%.*s", (int)(dot2 - dot1 - 1), dot1 + 1);
                 strncpy(time_buf, dot2 + 1, sizeof(time_buf) - 1);
             } else {
                 strncpy(preview_buf, dot1 + 1, sizeof(preview_buf) - 1);
@@ -373,7 +373,7 @@ void render_msg_thread(char* data) {
     char name_buf[32] = "";
     char* pipe = strchr(data, '|');
     if (pipe != NULL) {
-        strncpy(name_buf, data, pipe - data);
+        snprintf(name_buf, sizeof(name_buf), "%.*s", (int)(pipe - data), data);
         data = pipe + 1;
     } else {
         strncpy(name_buf, data, sizeof(name_buf) - 1);
@@ -573,6 +573,10 @@ void loop() {
 
             if (marker == 0x03) {
                 // --- Display region update (partial refresh) ---
+                if (offset + 9 >= PAYLOAD_BYTES) {
+                    Serial.println(">> ERROR: 0x03 marker too close to buffer end, skipping");
+                    goto done_processing;
+                }
                 uint8_t flags = local_buf[offset+1];
                 bool last_chunk = (flags & 0x01) == 0x00;
                 int x = (local_buf[offset+2] << 8) | local_buf[offset+3];
@@ -651,7 +655,8 @@ void loop() {
                         char thread_name[32] = "";
                         const char* tn = text + 11;
                         const char* tn_end = strchr(tn, '|');
-                        strncpy(thread_name, tn, tn_end ? tn_end - tn : sizeof(thread_name) - 1);
+                        if (tn_end) snprintf(thread_name, sizeof(thread_name), "%.*s", (int)(tn_end - tn), tn);
+                        else        strncpy(thread_name, tn, sizeof(thread_name) - 1);
                         snprintf(current_screen, sizeof(current_screen), "MSG_THREAD(%s)", thread_name);
                         render_msg_thread(text + 11);
                     } else {
@@ -676,6 +681,7 @@ void loop() {
             Serial.printf("Raw Data: %02X %02X %02X %02X\n", local_buf[0], local_buf[1], local_buf[2], local_buf[3]);
         }
 
+        done_processing:
         display.expander2.digitalWrite(8, HIGH, true);
     }
 }

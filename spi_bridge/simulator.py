@@ -192,7 +192,7 @@ class Simulator:
         self._text_centered(date_str, start_y + 64 + 24, 3)
 
         # 4 buttons — flush edge-to-edge, 150px each
-        buttons = ['TEXT', 'CALL', 'READ', 'LISTEN']
+        buttons = ['Texts', 'Calls', 'Books', 'Music']
         btn_positions = [0, 150, 300, 450]
         btn_w, btn_h, btn_y = 150, 65, 535
         for i, (label, bx) in enumerate(zip(buttons, btn_positions)):
@@ -244,8 +244,8 @@ class Simulator:
                 self._text(char, x, 10, 3, BLACK)
 
         _header_btn('<', 16, active=(sel == -1))
-        title_w = len('TEXT') * self._char_w(3)
-        self._text('TEXT', (self.WIDTH - title_w) // 2, 10, 3)
+        title_w = len('TEXTS') * self._char_w(3)
+        self._text('TEXTS', (self.WIDTH - title_w) // 2, 10, 3)
         _header_btn('+', self.WIDTH - 16 - self._char_w(3), active=(sel == -2))
 
         row_h = 72
