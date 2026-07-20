@@ -491,6 +491,572 @@ void render_sms(char* text) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════
+// OS 0.1 RENDERERS
+// ══════════════════════════════════════════════════════════════
+
+// Word-wrap text, centering each line. Returns final y after all lines.
+int render_centered_wrapped(const char* text, int y, int line_h, int text_size) {
+    const int char_w    = 6 * text_size;
+    const int margin    = 60;
+    const int max_chars = (600 - margin * 2) / char_w;
+    char line_buf[80]   = "";
+    const char* p = text;
+    while (true) {
+        while (*p == ' ') p++;
+        if (*p == '\0') break;
+        const char* ws = p;
+        while (*p && *p != ' ') p++;
+        int wlen = (int)(p - ws);
+        if (wlen == 0) break;
+        int blen = (int)strlen(line_buf);
+        bool fits = (blen == 0) ? (wlen <= max_chars) : (blen + 1 + wlen <= max_chars);
+        if (fits) {
+            if (blen > 0 && blen < 78) strcat(line_buf, " ");
+            int avail = 78 - (int)strlen(line_buf);
+            strncat(line_buf, ws, avail < wlen ? avail : wlen);
+        } else {
+            if (blen > 0) {
+                int x = (600 - (int)strlen(line_buf) * char_w) / 2;
+                if (x < margin) x = margin;
+                display.setCursor(x, y);
+                display.print(line_buf);
+                y += line_h;
+                memset(line_buf, 0, sizeof(line_buf));
+            }
+            int avail = 78;
+            strncat(line_buf, ws, avail < wlen ? avail : wlen);
+        }
+    }
+    if (strlen(line_buf) > 0) {
+        int x = (600 - (int)strlen(line_buf) * char_w) / 2;
+        if (x < margin) x = margin;
+        display.setCursor(x, y);
+        display.print(line_buf);
+        y += line_h;
+    }
+    return y;
+}
+
+void render_lock(char* data) {
+    // data = "time_str|date_str|quote|attribution"
+    char time_str[16] = "", date_str[32] = "", quote_buf[200] = "", attr_buf[40] = "";
+    char* p1 = strchr(data, '|');
+    if (p1) {
+        snprintf(time_str, sizeof(time_str), "%.*s", (int)(p1 - data), data);
+        char* p2 = strchr(p1 + 1, '|');
+        if (p2) {
+            snprintf(date_str, sizeof(date_str), "%.*s", (int)(p2 - p1 - 1), p1 + 1);
+            char* p3 = strchr(p2 + 1, '|');
+            if (p3) {
+                snprintf(quote_buf, sizeof(quote_buf), "%.*s", (int)(p3 - p2 - 1), p2 + 1);
+                strncpy(attr_buf, p3 + 1, sizeof(attr_buf) - 1);
+            } else {
+                strncpy(quote_buf, p2 + 1, sizeof(quote_buf) - 1);
+            }
+        } else {
+            strncpy(date_str, p1 + 1, sizeof(date_str) - 1);
+        }
+    } else {
+        strncpy(time_str, data, sizeof(time_str) - 1);
+    }
+
+    display.setTextColor(BLACK);
+
+    // "OS 0.1" — top left, textSize 1
+    display.setTextSize(1);
+    display.setCursor(10, 8);
+    display.print("OS 0.1");
+
+    // ASCII cat — top right, textSize 2 (12px/char)
+    const char* cat[] = {
+        "   )\\._.,--....,'``.",
+        "  /,   _.. \\   _\\  (`._ ,.",
+        " `._.-(,_..'--(,_..'`-.;.'",
+    };
+    display.setTextSize(2);
+    for (int ci = 0; ci < 3; ci++) {
+        int lw = strlen(cat[ci]) * 12;
+        int cx = 600 - lw - 6, cy = 6 + ci * 18;
+        display.setCursor(cx, cy);     display.print(cat[ci]);
+        display.setCursor(cx + 1, cy); display.print(cat[ci]);
+    }
+
+    // Clock — textSize 8 (48px/char, 64px tall), centered at y=130
+    display.setTextSize(8);
+    int clock_w = strlen(time_str) * 48;
+    display.setCursor((600 - clock_w) / 2, 130);
+    display.print(time_str);
+
+    // Date — textSize 2 (12px/char), centered at y=210
+    display.setTextSize(2);
+    int date_w = strlen(date_str) * 12;
+    display.setCursor((600 - date_w) / 2, 210);
+    display.print(date_str);
+
+    // Quote — word-wrapped, centered, starting at y=330
+    display.setTextSize(2);
+    int quote_end_y = render_centered_wrapped(quote_buf, 330, 20, 2);
+
+    // Attribution — textSize 1, centered
+    if (strlen(attr_buf) > 0) {
+        display.setTextSize(1);
+        int aw = strlen(attr_buf) * 6;
+        display.setCursor((600 - aw) / 2, quote_end_y + 8);
+        display.print(attr_buf);
+    }
+}
+
+void render_home2(char* data) {
+    // data = "time_str|home_index|unread"
+    char time_str[16] = "";
+    int home_index = 0, unread = 0;
+    char* p1 = strchr(data, '|');
+    if (p1) {
+        snprintf(time_str, sizeof(time_str), "%.*s", (int)(p1 - data), data);
+        char* p2 = strchr(p1 + 1, '|');
+        if (p2) {
+            char idx_buf[4] = "";
+            snprintf(idx_buf, sizeof(idx_buf), "%.*s", (int)(p2 - p1 - 1), p1 + 1);
+            home_index = atoi(idx_buf);
+            unread     = atoi(p2 + 1);
+        } else {
+            home_index = atoi(p1 + 1);
+        }
+    } else {
+        strncpy(time_str, data, sizeof(time_str) - 1);
+    }
+
+    const int header_h = 60;
+    display.setTextColor(BLACK);
+
+    // "KYPHONE" — left, textSize 2 (bold = double-print)
+    display.setTextSize(2);
+    display.setCursor(24, 18);  display.print("KYPHONE");
+    display.setCursor(25, 18);  display.print("KYPHONE");
+
+    // Clock — right, textSize 3 (18px/char)
+    display.setTextSize(3);
+    int tw = strlen(time_str) * 18;
+    display.setCursor(600 - 24 - tw, 14);
+    display.print(time_str);
+
+    // Header rule (2px)
+    display.drawLine(0, header_h,     600, header_h,     BLACK);
+    display.drawLine(0, header_h + 1, 600, header_h + 1, BLACK);
+
+    // 4 menu rows
+    const char* labels[]  = {"TEXT", "CALL", "READ", "LISTEN"};
+    const char* numbers[] = {"01",   "02",   "03",   "04"};
+    const int row_h    = 80;
+    const int pad_left = 64;
+    const int num_w    = 24; // 2 chars at textSize 2 = 24px
+    const int gap      = 20;
+    const int label_x  = pad_left + num_w + gap; // 108
+
+    for (int i = 0; i < 4; i++) {
+        int y   = header_h + i * row_h;
+        bool sel = (i == home_index);
+
+        if (sel) {
+            display.fillRect(0, y, 600, row_h, BLACK);
+            display.setTextColor(WHITE);
+        } else {
+            display.setTextColor(BLACK);
+        }
+
+        // Row number — textSize 2
+        display.setTextSize(2);
+        display.setCursor(pad_left, y + (row_h - 16) / 2 + 8);
+        display.print(numbers[i]);
+
+        // App label — textSize 4, bold (double-print)
+        display.setTextSize(4);
+        display.setCursor(label_x, y + (row_h - 32) / 2);
+        display.print(labels[i]);
+        display.setCursor(label_x + 1, y + (row_h - 32) / 2);
+        display.print(labels[i]);
+
+        // Unread badge on TEXT row
+        if (i == 0 && unread > 0) {
+            uint16_t bg = sel ? WHITE : BLACK;
+            uint16_t fg = sel ? BLACK : WHITE;
+            int bx = 600 - 50, by = y + (row_h - 24) / 2;
+            display.fillRect(bx, by, 28, 24, bg);
+            char badge[2] = {'0' + (char)(unread > 9 ? 9 : unread), '\0'};
+            display.setTextSize(2);
+            display.setTextColor(fg);
+            display.setCursor(bx + 6, by + 4);
+            display.print(badge);
+        }
+
+        display.setTextColor(BLACK);
+        display.drawLine(0, y + row_h, 600, y + row_h, BLACK);
+    }
+
+    // Footer (2px rule + labels)
+    const int footer_y = 550;
+    display.drawLine(0, footer_y,     600, footer_y,     BLACK);
+    display.drawLine(0, footer_y + 1, 600, footer_y + 1, BLACK);
+    display.setTextSize(1);
+    display.setTextColor(BLACK);
+    display.setCursor(28, footer_y + 14);
+    display.print("BATT 82%");
+
+    // Signal: 3 filled + 1 outlined rectangles
+    for (int b = 0; b < 4; b++) {
+        int bx = 600 - 28 - (4 - b) * 14;
+        int by = footer_y + 8;
+        if (b < 3) display.fillRect(bx, by, 10, 20, BLACK);
+        else        display.drawRect(bx, by, 10, 20, BLACK);
+    }
+}
+
+void render_texts(char* data, int selected) {
+    // data = "name·preview·unread|..."  selected: -1=back, -2=plus, >=0=row
+    const int header_h = 44;
+    const int row_h    = 88;
+    const int margin   = 28;
+
+    display.drawLine(0, header_h - 1, 600, header_h - 1, BLACK);
+    display.setTextSize(3);
+    display.setTextColor(BLACK);
+
+    // < back
+    if (selected == -1) {
+        display.fillRect(margin - 4, 6, 26, 32, BLACK);
+        display.setTextColor(WHITE);
+        display.setCursor(margin, 10); display.print("<");
+        display.setTextColor(BLACK);
+    } else {
+        display.setCursor(margin, 10); display.print("<");
+    }
+
+    // "TEXT" centered (4 chars * 18px = 72px)
+    display.setCursor((600 - 72) / 2, 10);     display.print("TEXT");
+    display.setCursor((600 - 72) / 2 + 1, 10); display.print("TEXT");
+
+    // + compose
+    int plus_x = 600 - margin - 18;
+    if (selected == -2) {
+        display.fillRect(plus_x - 4, 6, 26, 32, BLACK);
+        display.setTextColor(WHITE);
+        display.setCursor(plus_x, 10); display.print("+");
+        display.setTextColor(BLACK);
+    } else {
+        display.setCursor(plus_x, 10); display.print("+");
+    }
+
+    int y   = header_h;
+    int row = 0;
+    char* entry = data;
+
+    while (entry != NULL && y + row_h <= 600) {
+        char* next = strchr(entry, '|');
+        char entry_buf[120] = "";
+        if (next != NULL) {
+            int len = (int)(next - entry);
+            if (len >= 120) len = 119;
+            strncpy(entry_buf, entry, len);
+            entry = next + 1;
+        } else {
+            strncpy(entry_buf, entry, sizeof(entry_buf) - 1);
+            entry = NULL;
+        }
+
+        char name_buf[16]    = "";
+        char preview_buf[50] = "";
+        char unread_buf[4]   = "0";
+
+        char* dot1 = strchr(entry_buf, '\xB7');
+        if (dot1 != NULL) {
+            snprintf(name_buf, sizeof(name_buf), "%.*s", (int)(dot1 - entry_buf), entry_buf);
+            char* dot2 = strchr(dot1 + 1, '\xB7');
+            if (dot2 != NULL) {
+                snprintf(preview_buf, sizeof(preview_buf), "%.*s", (int)(dot2 - dot1 - 1), dot1 + 1);
+                strncpy(unread_buf, dot2 + 1, sizeof(unread_buf) - 1);
+            } else {
+                strncpy(preview_buf, dot1 + 1, sizeof(preview_buf) - 1);
+            }
+        } else {
+            strncpy(name_buf, entry_buf, sizeof(name_buf) - 1);
+        }
+        bool is_unread = (unread_buf[0] == '1');
+        bool is_sel    = (row == selected);
+
+        if (is_sel) {
+            display.fillRect(0, y, 600, row_h, BLACK);
+            display.setTextColor(WHITE);
+        } else {
+            display.setTextColor(BLACK);
+        }
+
+        // Name (bold if unread or selected)
+        display.setTextSize(3);
+        display.setCursor(margin, y + 10);
+        display.print(name_buf);
+        if (is_unread || is_sel) {
+            display.setCursor(margin + 1, y + 10);
+            display.print(name_buf);
+        }
+
+        // Chevron
+        display.setTextSize(2);
+        display.setCursor(600 - margin - 12, y + (row_h - 16) / 2);
+        display.print(">");
+
+        // Preview
+        display.setCursor(margin, y + 52);
+        display.print(preview_buf);
+
+        display.setTextColor(BLACK);
+        display.drawLine(0, y + row_h - 1, 600, y + row_h - 1, BLACK);
+        row++;
+        y += row_h;
+    }
+}
+
+void render_thread2(char* data) {
+    // data = "name|draft|Y:body|R:body|..."
+    char name_buf[32]  = "";
+    char draft_buf[44] = "";
+
+    char* p1 = strchr(data, '|');
+    if (p1) {
+        snprintf(name_buf, sizeof(name_buf), "%.*s", (int)(p1 - data), data);
+        data = p1 + 1;
+    } else {
+        strncpy(name_buf, data, sizeof(name_buf) - 1);
+        data = NULL;
+    }
+    if (data) {
+        char* p2 = strchr(data, '|');
+        if (p2) {
+            snprintf(draft_buf, sizeof(draft_buf), "%.*s", (int)(p2 - data), data);
+            data = p2 + 1;
+        } else {
+            strncpy(draft_buf, data, sizeof(draft_buf) - 1);
+            data = NULL;
+        }
+    }
+
+    // Header: < NAME i
+    display.setTextSize(3);
+    display.setTextColor(BLACK);
+    display.setCursor(16, 10);
+    display.print("<");
+    int name_x = (600 - (int)strlen(name_buf) * 18) / 2;
+    if (name_x < 10) name_x = 10;
+    display.setCursor(name_x, 10);     display.print(name_buf);
+    display.setCursor(name_x + 1, 10); display.print(name_buf);
+    display.setCursor(600 - 16 - 18, 10);
+    display.print("i");
+    display.drawLine(0, 46, 600, 46, BLACK);
+
+    // Reply bar at bottom (y=558)
+    const int reply_y = 558;
+    display.drawLine(0, reply_y,     600, reply_y,     BLACK);
+    display.drawLine(0, reply_y + 1, 600, reply_y + 1, BLACK);
+    display.setTextSize(3);
+    display.setCursor(24, reply_y + 8);
+    display.print("> ");
+    int draft_x = 24 + 36; // "> " = 2 chars * 18px
+    display.setCursor(draft_x, reply_y + 8);
+    display.print(draft_buf);
+    // Cursor block after draft text
+    int cursor_x = draft_x + (int)strlen(draft_buf) * 18;
+    display.fillRect(cursor_x, reply_y + 8, 18, 24, BLACK);
+
+    // Messages in y=56 to reply_y-32
+    int y          = 56;
+    const int line_h = 32;
+    const int margin = 16;
+    char last_time[12] = "";
+
+    while (data != NULL && y < reply_y - line_h) {
+        char* next = strchr(data, '|');
+        char msg_buf[80] = "";
+        if (next != NULL) {
+            int len = (int)(next - data);
+            if (len >= 80) len = 79;
+            strncpy(msg_buf, data, len);
+            data = next + 1;
+        } else {
+            strncpy(msg_buf, data, sizeof(msg_buf) - 1);
+            data = NULL;
+        }
+
+        char align = 'R';
+        char* rest = msg_buf;
+        if (strlen(msg_buf) >= 2 && msg_buf[1] == ':') {
+            align = msg_buf[0];
+            rest  = msg_buf + 2;
+        }
+        char time_buf[12] = "";
+        char* body = rest;
+        char* tilde = strchr(rest, '~');
+        if (tilde) { strncpy(time_buf, rest, tilde - rest); body = tilde + 1; }
+
+        if (strlen(time_buf) > 0 && strcmp(time_buf, last_time) != 0) {
+            strncpy(last_time, time_buf, sizeof(last_time) - 1);
+            display.setTextSize(1);
+            int tw = strlen(time_buf) * 6;
+            display.setCursor((600 - tw) / 2, y);
+            display.print(time_buf);
+            y += 16;
+        }
+
+        const char* label = (align == 'Y') ? "Me" : name_buf;
+        char prefix_str[24] = "";
+        snprintf(prefix_str, sizeof(prefix_str), "%s: ", label);
+        int prefix_px = (int)strlen(prefix_str) * 18;
+        int body_x    = margin + prefix_px;
+        int cpl       = (600 - body_x) / 18;
+        if (cpl < 1) cpl = 1;
+
+        display.setTextSize(3);
+        display.setTextColor(BLACK);
+        display.setCursor(margin, y);     display.print(prefix_str);
+        display.setCursor(margin + 1, y); display.print(prefix_str);
+
+        char wbuf[48] = "";
+        const char* bp = body;
+        while (*bp != '\0') {
+            while (*bp == ' ') bp++;
+            if (*bp == '\0') break;
+            const char* ws2 = bp;
+            while (*bp && *bp != ' ') bp++;
+            int wlen = (int)(bp - ws2);
+            int blen = (int)strlen(wbuf);
+            bool fits = (blen == 0) ? (wlen <= cpl) : (blen + 1 + wlen <= cpl);
+            if (fits) {
+                if (blen > 0 && blen < 46) strcat(wbuf, " ");
+                int avail = 47 - (int)strlen(wbuf);
+                strncat(wbuf, ws2, avail < wlen ? avail : wlen);
+            } else {
+                display.setCursor(body_x, y);
+                display.print(wbuf);
+                y += line_h;
+                if (y >= reply_y - line_h) break;
+                memset(wbuf, 0, sizeof(wbuf));
+                strncat(wbuf, ws2, wlen < 47 ? wlen : 47);
+            }
+        }
+        if (strlen(wbuf) > 0 && y < reply_y - line_h) {
+            display.setCursor(body_x, y);
+            display.print(wbuf);
+            y += line_h;
+        }
+        y += 4;
+    }
+}
+
+void render_compose(char* data) {
+    // data = "compose_to|compose_msg|to_active"
+    char to_buf[64]  = "";
+    char msg_buf[80] = "";
+    char to_active   = '1';
+
+    char* p1 = strchr(data, '|');
+    if (p1) {
+        snprintf(to_buf, sizeof(to_buf), "%.*s", (int)(p1 - data), data);
+        char* p2 = strchr(p1 + 1, '|');
+        if (p2) {
+            snprintf(msg_buf, sizeof(msg_buf), "%.*s", (int)(p2 - p1 - 1), p1 + 1);
+            to_active = *(p2 + 1);
+        } else {
+            strncpy(msg_buf, p1 + 1, sizeof(msg_buf) - 1);
+        }
+    } else {
+        strncpy(to_buf, data, sizeof(to_buf) - 1);
+    }
+
+    display.setTextColor(BLACK);
+
+    // "NEW MESSAGE" header — textSize 3, bold
+    display.setTextSize(3);
+    display.setCursor(24, 10);     display.print("NEW MESSAGE");
+    display.setCursor(25, 10);     display.print("NEW MESSAGE");
+    display.drawLine(0, 44, 600, 44, BLACK);
+    display.drawLine(0, 45, 600, 45, BLACK);
+
+    // TO: label — textSize 1
+    display.setTextSize(1);
+    display.setCursor(24, 58);
+    display.print("TO:");
+
+    // TO field — textSize 3
+    display.setTextSize(3);
+    display.setCursor(24, 72);
+    display.print(to_buf);
+    if (to_active == '1') {
+        int cx = 24 + (int)strlen(to_buf) * 18;
+        display.fillRect(cx, 72, 18, 24, BLACK);
+    }
+    display.drawLine(0, 100, 600, 100, BLACK);
+
+    // MESSAGE: label — textSize 1
+    display.setTextSize(1);
+    display.setCursor(24, 114);
+    display.print("MESSAGE:");
+
+    // Message field — textSize 2, word-wrapped
+    display.setTextSize(2);
+    const int char_w = 12, cpl = (600 - 48) / char_w;
+    int y_pos = 128;
+    char wbuf2[64] = "";
+    const char* mp = msg_buf;
+    while (*mp != '\0') {
+        while (*mp == ' ') mp++;
+        if (*mp == '\0') break;
+        const char* ws2 = mp;
+        while (*mp && *mp != ' ') mp++;
+        int wlen = (int)(mp - ws2);
+        int blen = (int)strlen(wbuf2);
+        bool fits = (blen == 0) ? (wlen <= cpl) : (blen + 1 + wlen <= cpl);
+        if (fits) {
+            if (blen > 0 && blen < 62) strcat(wbuf2, " ");
+            int avail = 62 - (int)strlen(wbuf2);
+            strncat(wbuf2, ws2, avail < wlen ? avail : wlen);
+        } else {
+            display.setCursor(24, y_pos);
+            display.print(wbuf2);
+            y_pos += 20;
+            memset(wbuf2, 0, sizeof(wbuf2));
+            int avail = 62;
+            strncat(wbuf2, ws2, avail < wlen ? avail : wlen);
+        }
+    }
+    display.setCursor(24, y_pos);
+    display.print(wbuf2);
+    if (to_active != '1') {
+        int cx = 24 + (int)strlen(wbuf2) * char_w;
+        display.fillRect(cx, y_pos, char_w, 16, BLACK);
+    }
+}
+
+void render_stub(char* data) {
+    // data = "app_name"
+    char name_buf[32] = "";
+    strncpy(name_buf, data, sizeof(name_buf) - 1);
+    char* pipe = strchr(name_buf, '|');
+    if (pipe) *pipe = '\0';
+
+    display.setTextSize(3);
+    display.setTextColor(BLACK);
+    display.setCursor(24, 10);     display.print(name_buf);
+    display.setCursor(25, 10);     display.print(name_buf);
+    display.drawLine(0, 44, 600, 44, BLACK);
+    display.drawLine(0, 45, 600, 45, BLACK);
+
+    char coming[64] = "";
+    snprintf(coming, sizeof(coming), "%s: COMING SOON", name_buf);
+    display.setTextSize(2);
+    int tw = strlen(coming) * 12;
+    display.setCursor((600 - tw) / 2, 280);
+    display.print(coming);
+}
+
 void setup() {
     Serial.begin(115200);
     delay(2000); 
@@ -659,6 +1225,41 @@ void loop() {
                         else        strncpy(thread_name, tn, sizeof(thread_name) - 1);
                         snprintf(current_screen, sizeof(current_screen), "MSG_THREAD(%s)", thread_name);
                         render_msg_thread(text + 11);
+                    // ── OS 0.1 commands ──────────────────────────────────────
+                    } else if (strncmp(text, "LOCK|", 5) == 0) {
+                        strncpy(current_screen, "LOCK", sizeof(current_screen) - 1);
+                        render_lock(text + 5);
+                    } else if (strncmp(text, "HOME2|", 6) == 0) {
+                        strncpy(current_screen, "HOME2", sizeof(current_screen) - 1);
+                        render_home2(text + 6);
+                    } else if (strncmp(text, "TEXTS|", 6) == 0) {
+                        strncpy(current_screen, "TEXTS", sizeof(current_screen) - 1);
+                        char* after   = text + 6;
+                        int   sel     = 0;
+                        char* idx_end = strchr(after, '|');
+                        if (idx_end != NULL) {
+                            char idx_buf[5] = "";
+                            int len = (int)(idx_end - after);
+                            if (len >= 5) len = 4;
+                            strncpy(idx_buf, after, len);
+                            sel   = atoi(idx_buf);
+                            after = idx_end + 1;
+                        }
+                        render_texts(after, sel);
+                    } else if (strncmp(text, "THREAD2|", 8) == 0) {
+                        char thread_name[32] = "";
+                        const char* tn = text + 8;
+                        const char* tn_end = strchr(tn, '|');
+                        if (tn_end) snprintf(thread_name, sizeof(thread_name), "%.*s", (int)(tn_end - tn), tn);
+                        else        strncpy(thread_name, tn, sizeof(thread_name) - 1);
+                        snprintf(current_screen, sizeof(current_screen), "THREAD2(%s)", thread_name);
+                        render_thread2(text + 8);
+                    } else if (strncmp(text, "COMPOSE|", 8) == 0) {
+                        strncpy(current_screen, "COMPOSE", sizeof(current_screen) - 1);
+                        render_compose(text + 8);
+                    } else if (strncmp(text, "STUB|", 5) == 0) {
+                        strncpy(current_screen, "STUB", sizeof(current_screen) - 1);
+                        render_stub(text + 5);
                     } else {
                         strncpy(current_screen, "SMS", sizeof(current_screen) - 1);
                         render_sms(text);
