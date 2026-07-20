@@ -104,6 +104,8 @@ state = {
     'lock':             threading.Lock(),
 }
 
+_spi_lock = threading.Lock()  # serializes concurrent push_screen calls
+
 # --- Hardware Init ---
 if not SIM_MODE:
     chip      = gpiod.Chip(CHIP)
@@ -185,10 +187,11 @@ def push_screen(command):
     if SIM_MODE:
         simulator.render(command)
         return
-    if not wait_for_ready():
-        print(f"Warning: Inkplate not ready, skipping: {command[:40]}")
-        return
-    spi.xfer2(build_payload(command))
+    with _spi_lock:
+        if not wait_for_ready():
+            print(f"Warning: Inkplate not ready, skipping: {command[:40]}")
+            return
+        spi.xfer2(build_payload(command))
 
 
 # ─── Screen Builders ──────────────────────────────────────────────────────────
