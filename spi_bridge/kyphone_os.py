@@ -22,6 +22,7 @@ if not SIM_MODE:
     import spidev
     import gpiod
     from input_handler import KeyboardHandler
+    from trackpad_handler import TrackpadHandler
 
 from twilio.rest import Client
 
@@ -93,9 +94,11 @@ state = {
     'texts_header_sel': 'back',     # 'back' | 'plus'
     'thread_id':        None,       # sender phone number
     'thread_draft':     '',
+    'thread_header_sel': None,      # None=typing | 'back' | 'info'
     'compose_to':       '',
     'compose_msg':      '',
     'compose_to_active': True,
+    'compose_header_sel': None,     # None=typing | 'x'
     'stub_name':        '',
     'quote_index':      0,
     'messages':         [],         # [{sender, name, body, read}]
@@ -242,12 +245,14 @@ def push_texts():
 
 def push_thread2():
     with state['lock']:
-        thread_id = state['thread_id']
-        draft     = state['thread_draft']
+        thread_id  = state['thread_id']
+        draft      = state['thread_draft']
+        header_sel = state['thread_header_sel']
         thread_msgs = [m for m in state['messages'] if m['sender'] == thread_id]
 
     name = format_name(thread_id) if thread_id else ''
-    parts = [name, draft[:40]]
+    hdr  = {'back': 'B', 'info': 'I'}.get(header_sel, '')
+    parts = [name, draft[:40], hdr]
     for m in thread_msgs[-4:]:
         if not m['body'].strip():
             continue
@@ -258,10 +263,11 @@ def push_thread2():
 
 def push_compose():
     with state['lock']:
-        to       = state['compose_to'][:40]
-        msg      = state['compose_msg'][:60]
+        to        = state['compose_to'][:40]
+        msg       = state['compose_msg'][:60]
         to_active = '1' if state['compose_to_active'] else '0'
-    push_screen(f"COMPOSE|{to}|{msg}|{to_active}")
+        hdr       = 'X' if state['compose_header_sel'] == 'x' else ''
+    push_screen(f"COMPOSE|{to}|{msg}|{to_active}|{hdr}")
 
 
 def push_stub():
@@ -275,6 +281,22 @@ def push_stub():
 def handle_key(keycode):
     with state['lock']:
         screen = state['screen']
+    print(f"[handle_key] screen={screen} keycode={keycode}")
+
+    # 'Q' is a universal back/up shortcut (same as Esc), and WASD mirrors
+    # the arrow keys, except where they're needed as real typed characters
+    # in message/contact text entry.
+    if screen not in ('thread', 'compose'):
+        if keycode in ('CHAR:q', 'CHAR:Q'):
+            keycode = 'KEY_ESC'
+        elif keycode in ('CHAR:w', 'CHAR:W'):
+            keycode = 'KEY_UP'
+        elif keycode in ('CHAR:a', 'CHAR:A'):
+            keycode = 'KEY_LEFT'
+        elif keycode in ('CHAR:s', 'CHAR:S'):
+            keycode = 'KEY_DOWN'
+        elif keycode in ('CHAR:d', 'CHAR:D'):
+            keycode = 'KEY_RIGHT'
 
     if screen == 'lock':
         _from_lock(keycode)
@@ -308,16 +330,27 @@ def _from_lock(keycode):
 def _from_home(keycode):
     if keycode in ('KEY_DOWN', 'KEY_RIGHT'):
         with state['lock']:
-            state['home_index'] = min(3, state['home_index'] + 1)
-        push_home2()
+            old = state['home_index']
+            state['home_index'] = min(3, old + 1)
+            changed = state['home_index'] != old
+        if changed:
+            push_home2()
     elif keycode in ('KEY_UP', 'KEY_LEFT'):
         with state['lock']:
-            state['home_index'] = max(0, state['home_index'] - 1)
-        push_home2()
+            old = state['home_index']
+            state['home_index'] = max(-1, old - 1)  # -1 = KYPHONE header selected
+            changed = state['home_index'] != old
+        if changed:
+            push_home2()
     elif keycode == 'KEY_ENTER':
         with state['lock']:
             idx = state['home_index']
-        if idx == 0:   # TEXT
+        if idx == -1:  # KYPHONE header — same as Esc
+            with state['lock']:
+                state['screen'] = 'lock'
+                state['quote_index'] += 1
+            push_lock()
+        elif idx == 0:   # TEXT
             with state['lock']:
                 state['screen']           = 'texts_list'
                 state['texts_index']      = 0
@@ -347,34 +380,48 @@ def _from_texts_list(keycode):
     max_idx = max(0, len(threads) - 1)
 
     if keycode == 'KEY_DOWN':
+        changed = False
         if idx == -1:
             # From header → first row
             with state['lock']:
                 state['texts_index'] = 0
+            changed = True
         else:
-            with state['lock']:
-                state['texts_index'] = min(idx + 1, max_idx)
-        push_texts()
+            new_idx = min(idx + 1, max_idx)
+            if new_idx != idx:
+                with state['lock']:
+                    state['texts_index'] = new_idx
+                changed = True
+        if changed:
+            push_texts()
 
     elif keycode == 'KEY_UP':
+        changed = False
         if idx == 0:
             with state['lock']:
                 state['texts_index']      = -1
                 state['texts_header_sel'] = 'back'
+            changed = True
         elif idx > 0:
             with state['lock']:
                 state['texts_index'] = idx - 1
-        push_texts()
+            changed = True
+        if changed:
+            push_texts()
 
     elif keycode == 'KEY_RIGHT' and idx == -1:
         with state['lock']:
+            changed = state['texts_header_sel'] != 'plus'
             state['texts_header_sel'] = 'plus'
-        push_texts()
+        if changed:
+            push_texts()
 
     elif keycode == 'KEY_LEFT' and idx == -1:
         with state['lock']:
+            changed = state['texts_header_sel'] != 'back'
             state['texts_header_sel'] = 'back'
-        push_texts()
+        if changed:
+            push_texts()
 
     elif keycode == 'KEY_ENTER':
         if idx == -1 and hdr == 'back':
@@ -397,9 +444,10 @@ def _from_texts_list(keycode):
 
 def _open_thread(sender):
     with state['lock']:
-        state['screen']       = 'thread'
-        state['thread_id']    = sender
-        state['thread_draft'] = ''
+        state['screen']            = 'thread'
+        state['thread_id']         = sender
+        state['thread_draft']      = ''
+        state['thread_header_sel'] = None
         for m in state['messages']:
             if m['sender'] == sender:
                 m['read'] = True
@@ -409,23 +457,62 @@ def _open_thread(sender):
 
 def _open_compose():
     with state['lock']:
-        state['screen']          = 'compose'
-        state['compose_to']      = ''
-        state['compose_msg']     = ''
+        state['screen']            = 'compose'
+        state['compose_to']        = ''
+        state['compose_msg']       = ''
         state['compose_to_active'] = True
+        state['compose_header_sel'] = None
     push_compose()
 
 
 def _from_thread(keycode):
+    with state['lock']:
+        header_sel = state['thread_header_sel']
+
     if keycode == 'KEY_ESC':
         with state['lock']:
             state['screen'] = 'texts_list'
         push_texts()
-    elif keycode == 'KEY_BACKSPACE':
+
+    elif keycode == 'KEY_UP':
+        if header_sel is None:
+            with state['lock']:
+                state['thread_header_sel'] = 'back'
+            push_thread2()
+        # already at the header — nothing further up
+
+    elif header_sel is not None and keycode == 'KEY_DOWN':
+        with state['lock']:
+            state['thread_header_sel'] = None
+        push_thread2()
+
+    elif header_sel is not None and keycode == 'KEY_RIGHT':
+        with state['lock']:
+            changed = state['thread_header_sel'] != 'info'
+            state['thread_header_sel'] = 'info'
+        if changed:
+            push_thread2()
+
+    elif header_sel is not None and keycode == 'KEY_LEFT':
+        with state['lock']:
+            changed = state['thread_header_sel'] != 'back'
+            state['thread_header_sel'] = 'back'
+        if changed:
+            push_thread2()
+
+    elif header_sel is not None and keycode == 'KEY_ENTER':
+        if header_sel == 'back':
+            with state['lock']:
+                state['screen'] = 'texts_list'
+            push_texts()
+        # 'info' has no page yet — reserved for later
+
+    elif header_sel is None and keycode == 'KEY_BACKSPACE':
         with state['lock']:
             state['thread_draft'] = state['thread_draft'][:-1]
         push_thread2()
-    elif keycode == 'KEY_ENTER':
+
+    elif header_sel is None and keycode == 'KEY_ENTER':
         with state['lock']:
             draft     = state['thread_draft'].strip()
             thread_id = state['thread_id']
@@ -434,7 +521,8 @@ def _from_thread(keycode):
                 state['thread_draft'] = ''
             send_reply(thread_id, draft)
             push_thread2()
-    elif keycode.startswith('CHAR:'):
+
+    elif header_sel is None and keycode.startswith('CHAR:'):
         char = keycode[5:]
         with state['lock']:
             state['thread_draft'] += char
@@ -442,22 +530,46 @@ def _from_thread(keycode):
 
 
 def _from_compose(keycode):
+    with state['lock']:
+        header_sel = state['compose_header_sel']
+
     if keycode == 'KEY_ESC':
         with state['lock']:
             state['screen'] = 'texts_list'
         push_texts()
-    elif keycode == 'KEY_TAB':
+
+    elif keycode == 'KEY_UP':
+        if header_sel is None:
+            with state['lock']:
+                state['compose_header_sel'] = 'x'
+            push_compose()
+        # already at the header — nothing further up
+
+    elif header_sel is not None and keycode == 'KEY_DOWN':
+        with state['lock']:
+            state['compose_header_sel'] = None
+        push_compose()
+
+    elif header_sel is not None and keycode == 'KEY_ENTER':
+        # only target in the compose header is 'x' — exit
+        with state['lock']:
+            state['screen'] = 'texts_list'
+        push_texts()
+
+    elif header_sel is None and keycode == 'KEY_TAB':
         with state['lock']:
             state['compose_to_active'] = not state['compose_to_active']
         push_compose()
-    elif keycode == 'KEY_BACKSPACE':
+
+    elif header_sel is None and keycode == 'KEY_BACKSPACE':
         with state['lock']:
             if state['compose_to_active']:
                 state['compose_to'] = state['compose_to'][:-1]
             else:
                 state['compose_msg'] = state['compose_msg'][:-1]
         push_compose()
-    elif keycode == 'KEY_ENTER':
+
+    elif header_sel is None and keycode == 'KEY_ENTER':
         with state['lock']:
             to_active = state['compose_to_active']
             to_val    = state['compose_to'].strip()
@@ -475,7 +587,8 @@ def _from_compose(keycode):
                     state['thread_id'] = to_val
                     state['thread_draft'] = ''
                 push_thread2()
-    elif keycode.startswith('CHAR:'):
+
+    elif header_sel is None and keycode.startswith('CHAR:'):
         char = keycode[5:]
         with state['lock']:
             if state['compose_to_active']:
@@ -616,6 +729,7 @@ def main():
 
     if not SIM_MODE:
         KeyboardHandler(handle_key).start()
+        TrackpadHandler(handle_key).start()
 
     print("\n--- KyPhone OS 0.1 ---")
     if TWILIO_NUMBER and not SIM_MODE:

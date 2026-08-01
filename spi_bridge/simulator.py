@@ -172,34 +172,35 @@ class Simulator:
         quote    = parts[2] if len(parts) > 2 else ''
         attr     = parts[3] if len(parts) > 3 else ''
 
-        # OS 0.1 label — top left
-        self._text('OS 0.1', 10, 8, 1)
+        # OS 0.1 label — bottom left
+        self._text('OS 0.1', 10, 584, 1)
 
-        # ASCII cat — top right
+        # ASCII cat — bottom right
         cat = [
             r"   )\._.,--....,'``.",
             r"  /,   _.. \   _\  (`._ ,.",
             r" `._.-(,_..'--(,_..'`-.;.'",
         ]
         cat_font = pygame.font.SysFont('courier', 12, bold=True)
-        lh       = 14
+        lh       = 18
         max_w    = max(cat_font.size(l)[0] for l in cat)
         cat_x    = self.WIDTH - max_w - 8
+        cat_y    = self.HEIGHT - (lh * len(cat)) - 6  # bottom margin, computed from content height
         for i, line in enumerate(cat):
             img = cat_font.render(line, True, BLACK)
-            self._surface.blit(img, (cat_x, 6 + i * lh))
+            self._surface.blit(img, (cat_x, cat_y + i * lh))
 
         # Clock — big, centered, vertically in the top half
-        self._text_centered(time_str, 130, 8, clock=True)
+        self._text_centered(time_str, 190, 8, clock=True)
 
         # Date — below clock
-        self._text_centered(date_str, 210, 2)
+        self._text_centered(date_str, 270, 2)
 
         # Separator rule between clock area and quote area
         # (subtle, matches design's use of empty space)
 
         # Quote — centered, wrapped, bottom third
-        quote_y  = 330
+        quote_y  = 390
         margin   = 60
         max_px   = self.WIDTH - margin * 2
         lines    = self._wrap_lines(quote, 2, max_px)
@@ -229,20 +230,24 @@ class Simulator:
         except ValueError:
             unread = 0
 
-        header_h = 60
+        header_h   = 60
+        header_sel = home_index == -1
 
         # Header: KYPHONE (left) + clock (right)
-        self._text('KYPHONE', 24, 18, 2, bold=True)
+        if header_sel:
+            pygame.draw.rect(self._surface, BLACK, (0, 0, self.WIDTH, header_h))
+        header_fg = WHITE if header_sel else BLACK
+        self._text('KYPHONE', 24, 18, 2, header_fg, bold=True)
         time_w = len(time_str) * self._char_w(3)
-        self._text(time_str, self.WIDTH - 24 - time_w, 14, 3)
+        self._text(time_str, self.WIDTH - 24 - time_w, 14, 3, header_fg)
         self._line(header_h, weight=2)
 
-        # 4 menu rows
+        # 4 menu rows — fill the rest of the screen (footer removed)
         labels   = ['TEXT', 'CALL', 'READ', 'LISTEN']
         numbers  = ['01', '02', '03', '04']
-        row_h    = 80
-        pad_left = 64
-        num_w    = 2 * self._char_w(2)   # "01" at textSize 2
+        row_h    = (self.HEIGHT - header_h) // 4
+        pad_left = 160  # left-justified, but shifted right to center the block
+        num_w    = 2 * self._char_w(3)   # "01" at textSize 3
         gap      = 20
 
         for i, (label, num) in enumerate(zip(labels, numbers)):
@@ -253,13 +258,14 @@ class Simulator:
             if sel:
                 pygame.draw.rect(self._surface, BLACK, (0, y, self.WIDTH, row_h))
 
-            # Row number: small, slightly dimmed (we can't do real opacity, just smaller)
-            text_y = y + (row_h - 4*8) // 2  # center textSize 4 (32px) vertically
-            self._text(num, pad_left, text_y + 8, 2, fg)
+            # Row number: textSize 3 (was 2, scaled with label to keep 1:2 ratio)
+            num_y = y + (row_h - 3*8) // 2 + 12
+            self._text(num, pad_left, num_y, 3, fg)
 
-            # App label: large, bold
-            self._text(label, pad_left + num_w + gap, text_y, 4, fg, bold=True)
-            self._text(label, pad_left + num_w + gap + 1, text_y, 4, fg, bold=True)
+            # App label: textSize 6, bold (was 4)
+            label_y = y + (row_h - 6*8) // 2
+            self._text(label, pad_left + num_w + gap, label_y, 6, fg, bold=True)
+            self._text(label, pad_left + num_w + gap + 1, label_y, 6, fg, bold=True)
 
             # Unread badge on TEXT row
             if i == 0 and unread > 0:
@@ -272,14 +278,6 @@ class Simulator:
                 self._text(badge, badge_x + 6, badge_y + 4, 2, txt_col)
 
             self._line(y + row_h, weight=1)
-
-        # Footer
-        footer_y = 550
-        self._line(footer_y, weight=2)
-        self._text('BATT 82%', 28, footer_y + 14, 1)
-        signal = '●●●○'  # ●●●○
-        sig_w  = len(signal) * self._char_w(2)
-        self._text(signal, self.WIDTH - 28 - sig_w, footer_y + 10, 2)
 
     def _draw_texts(self, data):
         # data = "idx|name·preview·unread|..."
@@ -344,16 +342,27 @@ class Simulator:
             y += row_h
 
     def _draw_thread2(self, data):
-        # data = "name|draft|Y:body|R:body|..."
+        # data = "name|draft|hdr|Y:body|R:body|..."  hdr: ''=typing 'B'=back 'I'=info
         parts = data.split('|')
         name  = parts[0] if parts else ''
         draft = parts[1] if len(parts) > 1 else ''
-        msgs  = parts[2:] if len(parts) > 2 else []
+        hdr   = parts[2] if len(parts) > 2 else ''
+        msgs  = parts[3:] if len(parts) > 3 else []
 
         # Header
-        self._text('<', 16, 10, 3)
+        back_sel = hdr == 'B'
+        info_sel = hdr == 'I'
+
+        if back_sel:
+            pygame.draw.rect(self._surface, BLACK, (0, 0, 60, 46))
+        self._text('<', 16, 10, 3, WHITE if back_sel else BLACK)
+
         self._text_centered(name, 10, 3, bold=True)
-        self._text('i', self.WIDTH - 16 - self._char_w(3), 10, 3)
+
+        if info_sel:
+            pygame.draw.rect(self._surface, BLACK, (self.WIDTH - 60, 0, 60, 46))
+        self._text('i', self.WIDTH - 16 - self._char_w(3), 10, 3, WHITE if info_sel else BLACK)
+
         self._line(46)
 
         # Reply bar pinned at bottom
@@ -416,15 +425,22 @@ class Simulator:
             y += 4
 
     def _draw_compose(self, data):
-        # data = "compose_to|compose_msg|to_active"
+        # data = "compose_to|compose_msg|to_active|hdr"  hdr: ''=typing 'X'=exit selected
         parts     = data.split('|')
         to_str    = parts[0] if len(parts) > 0 else ''
         msg_str   = parts[1] if len(parts) > 1 else ''
         to_active = parts[2] != '0' if len(parts) > 2 else True
+        x_sel     = parts[3] == 'X' if len(parts) > 3 else False
 
         # Header
         self._text('NEW MESSAGE', 24, 10, 3, bold=True)
+        if x_sel:
+            pygame.draw.rect(self._surface, BLACK, (self.WIDTH - 60, 0, 60, 44))
+        self._text('X', self.WIDTH - 16 - self._char_w(3), 8, 3, WHITE if x_sel else BLACK)
         self._line(44, weight=2)
+
+        # SEND — bottom right; activates the same as Enter on a filled-out message
+        self._text('SEND', self.WIDTH - 24 - 4 * self._char_w(2), 570, 2)
 
         # TO: field
         self._text('TO:', 24, 58, 1)

@@ -39,9 +39,11 @@ def reset_state(**overrides):
         'texts_header_sel': 'back',
         'thread_id': None,
         'thread_draft': '',
+        'thread_header_sel': None,
         'compose_to': '',
         'compose_msg': '',
         'compose_to_active': True,
+        'compose_header_sel': None,
         'quote_index': 0,
         'messages': [],
         'last_sid': None,
@@ -113,9 +115,22 @@ class TestHomeScreen(unittest.TestCase):
         self.assertEqual(kyphone_os.state['home_index'], 3)
 
     @patch.object(kyphone_os, 'push_screen')
-    def test_up_clamped_at_0(self, _ps):
+    def test_up_at_0_enters_header(self, _ps):
         kyphone_os.handle_key('KEY_UP')
-        self.assertEqual(kyphone_os.state['home_index'], 0)
+        self.assertEqual(kyphone_os.state['home_index'], -1)
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_up_clamped_at_header(self, _ps):
+        reset_state(screen='home', home_index=-1)
+        kyphone_os.handle_key('KEY_UP')
+        self.assertEqual(kyphone_os.state['home_index'], -1)
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_enter_on_header_goes_to_lock(self, _ps):
+        reset_state(screen='home', home_index=-1, quote_index=5)
+        kyphone_os.handle_key('KEY_ENTER')
+        self.assertEqual(kyphone_os.state['screen'], 'lock')
+        self.assertEqual(kyphone_os.state['quote_index'], 6)
 
     @patch.object(kyphone_os, 'push_screen')
     def test_enter_text_goes_to_texts_list(self, _ps):
@@ -296,6 +311,50 @@ class TestThreadScreen(unittest.TestCase):
         kyphone_os.handle_key('KEY_ESC')
         self.assertEqual(kyphone_os.state['screen'], 'texts_list')
 
+    @patch.object(kyphone_os, 'push_screen')
+    def test_up_enters_header_on_back(self, _ps):
+        kyphone_os.handle_key('KEY_UP')
+        self.assertEqual(kyphone_os.state['thread_header_sel'], 'back')
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_right_in_header_moves_to_info(self, _ps):
+        reset_state(screen='thread', thread_id='+1001', thread_header_sel='back', messages=[])
+        kyphone_os.handle_key('KEY_RIGHT')
+        self.assertEqual(kyphone_os.state['thread_header_sel'], 'info')
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_left_in_header_moves_to_back(self, _ps):
+        reset_state(screen='thread', thread_id='+1001', thread_header_sel='info', messages=[])
+        kyphone_os.handle_key('KEY_LEFT')
+        self.assertEqual(kyphone_os.state['thread_header_sel'], 'back')
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_down_in_header_returns_to_typing(self, _ps):
+        reset_state(screen='thread', thread_id='+1001', thread_header_sel='back', messages=[])
+        kyphone_os.handle_key('KEY_DOWN')
+        self.assertIsNone(kyphone_os.state['thread_header_sel'])
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_enter_on_back_goes_to_texts_list(self, _ps):
+        reset_state(screen='thread', thread_id='+1001', thread_header_sel='back', messages=[])
+        kyphone_os.handle_key('KEY_ENTER')
+        self.assertEqual(kyphone_os.state['screen'], 'texts_list')
+
+    @patch.object(kyphone_os, 'push_screen')
+    @patch.object(kyphone_os, 'send_reply')
+    def test_enter_on_info_is_noop(self, mock_send, _ps):
+        reset_state(screen='thread', thread_id='+1001', thread_header_sel='info', messages=[])
+        kyphone_os.handle_key('KEY_ENTER')
+        mock_send.assert_not_called()
+        self.assertEqual(kyphone_os.state['screen'], 'thread')
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_char_ignored_while_header_selected(self, _ps):
+        reset_state(screen='thread', thread_id='+1001', thread_header_sel='back',
+                     thread_draft='', messages=[])
+        kyphone_os.handle_key('CHAR:h')
+        self.assertEqual(kyphone_os.state['thread_draft'], '')
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Compose Screen
@@ -361,6 +420,29 @@ class TestComposeScreen(unittest.TestCase):
     def test_esc_goes_to_texts_list(self, _ps):
         kyphone_os.handle_key('KEY_ESC')
         self.assertEqual(kyphone_os.state['screen'], 'texts_list')
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_up_enters_header_on_x(self, _ps):
+        kyphone_os.handle_key('KEY_UP')
+        self.assertEqual(kyphone_os.state['compose_header_sel'], 'x')
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_down_in_header_returns_to_typing(self, _ps):
+        reset_state(screen='compose', compose_header_sel='x')
+        kyphone_os.handle_key('KEY_DOWN')
+        self.assertIsNone(kyphone_os.state['compose_header_sel'])
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_enter_on_x_goes_to_texts_list(self, _ps):
+        reset_state(screen='compose', compose_header_sel='x')
+        kyphone_os.handle_key('KEY_ENTER')
+        self.assertEqual(kyphone_os.state['screen'], 'texts_list')
+
+    @patch.object(kyphone_os, 'push_screen')
+    def test_char_ignored_while_header_selected(self, _ps):
+        reset_state(screen='compose', compose_header_sel='x', compose_to='')
+        kyphone_os.handle_key('CHAR:a')
+        self.assertEqual(kyphone_os.state['compose_to'], '')
 
 
 if __name__ == '__main__':

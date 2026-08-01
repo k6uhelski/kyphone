@@ -131,10 +131,10 @@ All commands: `PREFIX|arg1|arg2|…` — pipe-delimited, null-terminated, fits i
 | Screen | Command format |
 | :--- | :--- |
 | Lock | `LOCK\|{HH:MM AM/PM}\|{DAY, MON DD}\|{quote}\|{attribution}` |
-| Home | `HOME2\|{HH:MM AM/PM}\|{home_index 0–3}\|{unread_count}` |
+| Home | `HOME2\|{HH:MM AM/PM}\|{home_index}\|{unread_count}` (index 0–3, or -1 = KYPHONE header selected) |
 | Texts list | `TEXTS\|{selected_idx}\|{name·preview·unread}\|…` (idx -1=back, -2=plus) |
-| Thread | `THREAD2\|{name}\|{draft}\|{Y:body or R:body}\|…` (last 4 msgs) |
-| Compose | `COMPOSE\|{to_field}\|{msg_field}\|{1=to_active, 0=msg_active}` |
+| Thread | `THREAD2\|{name}\|{draft}\|{hdr}\|{Y:body or R:body}\|…` (last 4 msgs; hdr: ''=typing, 'B'=back selected, 'I'=info selected) |
+| Compose | `COMPOSE\|{to_field}\|{msg_field}\|{1=to_active, 0=msg_active}\|{hdr}` (hdr: ''=typing, 'X'=exit selected) |
 | Stub | `STUB\|{app_name}` |
 
 `HOME2`/`THREAD2` prefixes avoid collision with OS 0.0 firmware commands during rollout.
@@ -149,11 +149,11 @@ Both input paths forward printable keypresses as `CHAR:<char>`:
 ### **Inkplate firmware renderers (OS 0.1)**
 Six new functions added to `Inkplate_SPI_Peripheral.ino` before `setup()`, dispatched from `loop()` before the legacy SMS fallback:
 
-*   `render_lock(data)` — OS 0.1 label, ASCII cat, textSize-8 clock (y=130), date (y=210), quote/attribution word-wrapped via `render_centered_wrapped`
-*   `render_home2(data)` — KYPHONE header + time, 4×80px rows, selected row inverted with `fillRect`, footer signal bars
+*   `render_lock(data)` — OS 0.1 label + ASCII cat (bottom, cat is a fixed 1-bit bitmap via `drawBitmap()`, not live text — see Known Constraints), textSize-8 clock (y=190), date (y=270), quote/attribution word-wrapped via `render_centered_wrapped` (starts y=390)
+*   `render_home2(data)` — KYPHONE header (highlights when `home_index=-1`) + time, 4 rows sized to fill the full remaining screen height (no footer), selected row inverted with `fillRect`
 *   `render_texts(data, selected)` — `<`/TEXT/`+` header, 88px thread rows with name·preview·unread badge
-*   `render_thread2(data)` — `<`/NAME/`i` header, AIM-style message bubbles, reply bar at y=558 with `> ` + draft + cursor block
-*   `render_compose(data)` — NEW MESSAGE header, TO:/MESSAGE: fields, cursor block in active field
+*   `render_thread2(data)` — `<`/NAME/`i` header (highlights on `thread_header_sel` = `back`/`info`), AIM-style message bubbles, reply bar at y=558 with `> ` + draft + cursor block
+*   `render_compose(data)` — NEW MESSAGE header with `X` (highlights on `compose_header_sel`='x', exits same as Esc), TO:/MESSAGE: fields, `SEND` visual affordance (bottom right, same action as Enter), cursor block in active field
 *   `render_stub(data)` — app name + COMING SOON
 
 OS 0.0 renderers (`render_home`, `render_msg_list`, `render_msg_thread`) kept for rollback safety.
@@ -220,6 +220,7 @@ Non-obvious facts that will bite future maintainers if undocumented.
 *   **`PAYLOAD_BYTES = 256` must stay in sync** between `kyphone_os.py` and the `.ino`. There is no compile-time check. If they drift, transfers corrupt silently.
 *   **`texts_index` negative encoding** is deliberate: `-1` = back header selected, `-2` = plus header selected. One integer encodes both row position and header button state without a separate field. Do not flatten this to a separate bool.
 *   **`HOME2`/`THREAD2` command names** were chosen to avoid firmware collision during the OS 0.0→0.1 rollout transition. Once hardware is confirmed stable on OS 0.1, they can be renamed to `HOME`/`THREAD` in a future firmware wipe.
+*   **The lock screen's ASCII cat is a fixed 1-bit bitmap (`cat_bitmap[]`, `drawBitmap()`), not live `display.print()` text.** Live text rendering of the cat's dense punctuation was visually distorting on real hardware (root cause never fully identified — ruled out partial-refresh fidelity, ghosting, and string/escape-sequence corruption via direct testing). A pre-rendered bitmap sidesteps the whole class of bug by removing font rendering from the equation entirely. Generated via PIL (Courier Bold, `stroke_width=1` for boldness) from `spi_bridge/`-adjacent tooling — if the art needs to change again, regenerate the byte array, don't hand-edit it. Position is computed from the bitmap's actual `CAT_BITMAP_W`/`CAT_BITMAP_H` (`600 - W - 6`, `600 - H - 6`), not hardcoded, so it can't drift off-screen if the art's size changes.
 
 ### **Product principles**
 The device exists to be a revolt against the attention economy, not just a "dumb phone."
