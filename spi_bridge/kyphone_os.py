@@ -107,7 +107,10 @@ state = {
     'lock':             threading.Lock(),
 }
 
-_spi_lock = threading.Lock()  # serializes concurrent push_screen calls
+_spi_lock       = threading.Lock()  # serializes the SPI sender thread's own transfers
+_pending_lock   = threading.Lock()
+_pending_command = None
+_pending_event  = threading.Event()
 
 # --- Hardware Init ---
 if not SIM_MODE:
@@ -186,15 +189,38 @@ def build_payload(text):
 
 
 def push_screen(command):
+    """Queue a screen command. Non-blocking — the actual SPI transfer happens
+    on a dedicated sender thread (see _spi_sender_loop), so a caller (e.g.
+    handle_key, invoked directly from the keyboard/trackpad's read loop)
+    never blocks on hardware I/O. If commands arrive faster than the SPI
+    transfer + e-ink refresh can keep up (~1s each), only the latest one
+    is kept — a fast burst of input coalesces to the final state instead
+    of rendering every intermediate frame."""
     print(f"  → {command[:80]}")
     if SIM_MODE:
         simulator.render(command)
         return
-    with _spi_lock:
-        if not wait_for_ready():
-            print(f"Warning: Inkplate not ready, skipping: {command[:40]}")
-            return
-        spi.xfer2(build_payload(command))
+    global _pending_command
+    with _pending_lock:
+        _pending_command = command
+    _pending_event.set()
+
+
+def _spi_sender_loop():
+    global _pending_command
+    while state['running']:
+        _pending_event.wait()
+        with _pending_lock:
+            command = _pending_command
+            _pending_command = None
+            _pending_event.clear()
+        if command is None:
+            continue
+        with _spi_lock:
+            if not wait_for_ready():
+                print(f"Warning: Inkplate not ready, skipping: {command[:40]}")
+                continue
+            spi.xfer2(build_payload(command))
 
 
 # ─── Screen Builders ──────────────────────────────────────────────────────────
@@ -728,6 +754,7 @@ def main():
     threading.Thread(target=sms_loop,   daemon=True).start()
 
     if not SIM_MODE:
+        threading.Thread(target=_spi_sender_loop, daemon=True).start()
         KeyboardHandler(handle_key).start()
         TrackpadHandler(handle_key).start()
 
