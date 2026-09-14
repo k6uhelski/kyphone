@@ -26,6 +26,10 @@ spi_bridge/serial_log_macmini.py
 # OS 0.0 legacy app — demo mode + fake conversation logic, not for public repo
 spi_bridge/kyphone_app.py
 
+# YouTube talk props — standalone Inkplate sketches, not part of the phone
+spi_bridge/Inkplate_Prop_Blank/
+spi_bridge/Inkplate_Prop_Title/
+
 # Local and Agent Files
 .gemini/
 work_log.md
