@@ -23,6 +23,9 @@ node_modules
 flash_macmini.sh
 spi_bridge/serial_log_macmini.py
 
+# OS 0.0 legacy app — demo mode + fake conversation logic, not for public repo
+spi_bridge/kyphone_app.py
+
 # Local and Agent Files
 .gemini/
 work_log.md
