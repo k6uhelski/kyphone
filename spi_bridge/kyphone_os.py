@@ -115,7 +115,7 @@ QUOTES = [
     "Walk as if you are kissing the Earth with your feet.",
     "Our own life has to be our message.",
     "Drink your tea slowly and reverently.",
-    "There is no path to peace — peace is the path.",
+    "There is no path to peace - peace is the path.",
     "Letting go gives us freedom, and freedom is the only condition for happiness.",
     "We are more than our pain.",
 ]
@@ -333,8 +333,8 @@ def push_lock():
     date_str = now.strftime("%A, %B %-d").upper()
     quote = QUOTES[state['quote_index'] % len(QUOTES)]
     # Truncate quote to fit within PAYLOAD_BYTES (prefix + separators ≈ 30 chars overhead)
-    max_quote = PAYLOAD_BYTES - 3 - len("LOCK|") - len(time_str) - len(date_str) - len("— THICH NHAT HANH") - 4
-    push_screen(f"LOCK|{time_str}|{date_str}|{quote[:max_quote]}|— THICH NHAT HANH")
+    max_quote = PAYLOAD_BYTES - 3 - len("LOCK|") - len(time_str) - len(date_str) - len("- THICH NHAT HANH") - 4
+    push_screen(f"LOCK|{time_str}|{date_str}|{quote[:max_quote]}|- THICH NHAT HANH")
 
 
 def push_home2():
@@ -1468,7 +1468,7 @@ def main():
         KeyboardHandler(handle_key).start()
         TrackpadHandler(handle_key).start()
 
-    print("\n--- KyPhone OS 0.1 ---")
+    print("\n--- KyPhone OS 0.2 ---")
     if TWILIO_NUMBER and not SIM_MODE:
         print(f"Number: {TWILIO_NUMBER}")
 
