@@ -18,8 +18,7 @@ import json
 import threading
 from datetime import datetime, timedelta
 
-SIM_MODE  = '--sim'  in sys.argv
-DEMO_MODE = '--demo' in sys.argv
+SIM_MODE = '--sim' in sys.argv
 
 if not SIM_MODE:
     import spidev
@@ -103,7 +102,7 @@ def find_contact(number=None, name=None):
 
 # --- Persistence Paths ---
 DATA_DIR      = os.path.join(os.path.dirname(__file__), '..', 'data')
-MESSAGES_FILE = os.path.join(DATA_DIR, 'demo_messages.json' if DEMO_MODE else 'messages.json')
+MESSAGES_FILE = os.path.join(DATA_DIR, 'messages.json')
 
 # --- Lock Screen Quotes ---
 # Matches the fixed list in the OS 0.2 design prototype. Quotes cycle each
@@ -1329,12 +1328,6 @@ def load_messages():
         state['messages'] = data.get('messages', [])
         state['last_sid']  = data.get('last_sid')
         print(f"Loaded {len(state['messages'])} messages.")
-        if DEMO_MODE:
-            known_numbers = {c['number'] for c in CONTACTS}
-            for m in state['messages']:
-                if m['sender'] not in known_numbers and m.get('name'):
-                    CONTACTS.append({'first': m['name'], 'last': '', 'number': m['sender']})
-                    known_numbers.add(m['sender'])
     except FileNotFoundError:
         pass
     except Exception as e:
@@ -1401,9 +1394,6 @@ def call_timer_loop():
 
 
 def sms_loop():
-    if DEMO_MODE:
-        print("Demo mode — SMS polling disabled.")
-        return
     if client is None:
         print("SMS polling disabled (no Twilio credentials).")
         return
@@ -1448,7 +1438,7 @@ def main():
     load_messages()
 
     # Backfill recent messages from Twilio on first run
-    if not SIM_MODE and not DEMO_MODE and state['last_sid'] is None and client is not None:
+    if not SIM_MODE and state['last_sid'] is None and client is not None:
         try:
             recent  = client.messages.list(to=TWILIO_NUMBER, limit=20)
             if recent:
