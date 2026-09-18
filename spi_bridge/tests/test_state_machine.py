@@ -109,10 +109,11 @@ class TestHomeScreen(unittest.TestCase):
         self.assertEqual(kyphone_os.state['home_index'], 1)
 
     @patch.object(kyphone_os, 'push_screen')
-    def test_down_clamped_at_3(self, _ps):
-        reset_state(screen='home', home_index=3)
+    def test_down_clamped_at_4(self, _ps):
+        # OS 0.2 home menu has 5 rows (TEXT/CALL/READ/LISTEN/CONTACTS).
+        reset_state(screen='home', home_index=4)
         kyphone_os.handle_key('KEY_DOWN')
-        self.assertEqual(kyphone_os.state['home_index'], 3)
+        self.assertEqual(kyphone_os.state['home_index'], 4)
 
     @patch.object(kyphone_os, 'push_screen')
     def test_up_at_0_enters_header(self, _ps):
@@ -342,11 +343,14 @@ class TestThreadScreen(unittest.TestCase):
 
     @patch.object(kyphone_os, 'push_screen')
     @patch.object(kyphone_os, 'send_reply')
-    def test_enter_on_info_is_noop(self, mock_send, _ps):
+    def test_enter_on_info_opens_contact_page(self, mock_send, _ps):
+        # OS 0.2: every reachable control does something — info opens the
+        # contact page instead of no-op'ing.
         reset_state(screen='thread', thread_id='+1001', thread_header_sel='info', messages=[])
         kyphone_os.handle_key('KEY_ENTER')
         mock_send.assert_not_called()
-        self.assertEqual(kyphone_os.state['screen'], 'thread')
+        self.assertEqual(kyphone_os.state['screen'], 'contact')
+        self.assertEqual(kyphone_os.state['contact_return'], 'thread')
 
     @patch.object(kyphone_os, 'push_screen')
     def test_char_ignored_while_header_selected(self, _ps):
@@ -381,10 +385,12 @@ class TestComposeScreen(unittest.TestCase):
         self.assertEqual(kyphone_os.state['compose_msg'], 'h')
 
     @patch.object(kyphone_os, 'push_screen')
-    def test_enter_on_to_empty_noop(self, _ps):
+    def test_enter_on_to_empty_opens_contacts_pick(self, _ps):
+        # OS 0.2: an empty TO field's Enter opens the contact picker instead
+        # of no-op'ing.
         kyphone_os.handle_key('KEY_ENTER')
-        self.assertTrue(kyphone_os.state['compose_to_active'])
-        self.assertEqual(kyphone_os.state['screen'], 'compose')
+        self.assertEqual(kyphone_os.state['screen'], 'contacts_pick')
+        self.assertEqual(kyphone_os.state['contacts_return'], 'compose')
 
     @patch.object(kyphone_os, 'push_screen')
     def test_enter_on_to_with_content_moves_to_message(self, _ps):

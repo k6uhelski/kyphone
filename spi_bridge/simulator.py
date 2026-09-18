@@ -150,6 +150,20 @@ class Simulator:
             self._draw_compose(rest)
         elif prefix == 'STUB':
             self._draw_stub(rest)
+        elif prefix == 'CONFIRMDISCARD':
+            self._draw_confirm_discard(rest)
+        elif prefix == 'CONTACTSPICK':
+            self._draw_contacts_pick(rest)
+        elif prefix == 'CONTACT':
+            self._draw_contact(rest)
+        elif prefix == 'CONTACTEDIT':
+            self._draw_contact_edit(rest)
+        elif prefix == 'CALLS':
+            self._draw_calls(rest)
+        elif prefix == 'DIAL':
+            self._draw_dial(rest)
+        elif prefix == 'CALLSTATE':
+            self._draw_call_state(rest)
         # OS 0.0 legacy screens (kept for kyphone_app.py compatibility)
         elif prefix in ('HOME', 'HOME_FAST'):
             self._draw_home(rest)
@@ -172,10 +186,10 @@ class Simulator:
         quote    = parts[2] if len(parts) > 2 else ''
         attr     = parts[3] if len(parts) > 3 else ''
 
-        # OS 0.1 label — bottom left
-        self._text('OS 0.1', 10, 584, 1)
+        # OS version — bottom left, textSize 2 (18px design token)
+        self._text('OS 0.2', 10, self.HEIGHT - 8 - 2 * 8, 2)
 
-        # ASCII cat — bottom right
+        # ASCII cat — bottom right (fixed bitmap on device; unchanged since 0.1)
         cat = [
             r"   )\._.,--....,'``.",
             r"  /,   _.. \   _\  (`._ ,.",
@@ -190,32 +204,29 @@ class Simulator:
             img = cat_font.render(line, True, BLACK)
             self._surface.blit(img, (cat_x, cat_y + i * lh))
 
-        # Clock — big, centered, vertically in the top half
-        self._text_centered(time_str, 190, 8, clock=True)
+        # Clock — textSize 8, centered, top:159
+        self._text_centered(time_str, 159, 8, clock=True)
 
-        # Date — below clock
-        self._text_centered(date_str, 270, 2)
+        # Date — textSize 3, centered, top:243
+        self._text_centered(date_str, 243, 3)
 
-        # Separator rule between clock area and quote area
-        # (subtle, matches design's use of empty space)
-
-        # Quote — centered, wrapped, bottom third
-        quote_y  = 390
+        # Quote — textSize 3, centered, wrapped, top:356, line-height 34
+        quote_y  = 356
         margin   = 60
         max_px   = self.WIDTH - margin * 2
-        lines    = self._wrap_lines(quote, 2, max_px)
-        line_h   = 20
+        lines    = self._wrap_lines(quote, 3, max_px)
+        line_h   = 34
         for line in lines:
-            w    = len(line) * self._char_w(2)
+            w    = len(line) * self._char_w(3)
             x    = (self.WIDTH - w) // 2
-            self._text(line, x, quote_y, 2)
+            self._text(line, x, quote_y, 3)
             quote_y += line_h
 
-        # Attribution — below quote
+        # Attribution — textSize 2, centered, 12px below the quote block
         if attr:
-            w = len(attr) * self._char_w(1)
+            w = len(attr) * self._char_w(2)
             x = (self.WIDTH - w) // 2
-            self._text(attr, x, quote_y + 10, 1)
+            self._text(attr, x, quote_y + 12, 2)
 
     def _draw_home2(self, data):
         # data = "time_str|home_index|unread"
@@ -233,54 +244,122 @@ class Simulator:
         header_h   = 60
         header_sel = home_index == -1
 
-        # Header: KYPHONE (left) + clock (right)
+        # Header: clock (left), battery + signal (right) — no KYPHONE label in 0.2
         if header_sel:
             pygame.draw.rect(self._surface, BLACK, (0, 0, self.WIDTH, header_h))
         header_fg = WHITE if header_sel else BLACK
-        self._text('KYPHONE', 24, 18, 2, header_fg, bold=True)
-        time_w = len(time_str) * self._char_w(3)
-        self._text(time_str, self.WIDTH - 24 - time_w, 14, 3, header_fg)
+        header_bg = BLACK if header_sel else WHITE
+        self._text(time_str, 24, 18, 3, header_fg)
+        self._draw_status_group(header_fg, header_bg, mid_y=header_h // 2)
         self._line(header_h, weight=2)
 
-        # 4 menu rows — fill the rest of the screen (footer removed)
-        labels   = ['TEXT', 'CALL', 'READ', 'LISTEN']
-        numbers  = ['01', '02', '03', '04']
-        row_h    = (self.HEIGHT - header_h) // 4
-        pad_left = 160  # left-justified, but shifted right to center the block
-        num_w    = 2 * self._char_w(3)   # "01" at textSize 3
-        gap      = 20
+        # 5-row menu (TEXT/CALL/READ/LISTEN/CONTACTS), scrolling: 4 fill the
+        # panel, the 5th scrolls into view when selected.
+        row_h     = 135
+        view_top  = header_h + 2
+        view_h    = self.HEIGHT - view_top
+        n         = len(self.HOME_MENU)
+        shift     = max(0, (max(0, home_index) + 1) * row_h - view_h)
 
-        for i, (label, num) in enumerate(zip(labels, numbers)):
-            y       = header_h + i * row_h
-            sel     = i == home_index
-            fg      = WHITE if sel else BLACK
-
+        prev_clip = self._surface.get_clip()
+        self._surface.set_clip(pygame.Rect(0, view_top, self.WIDTH, view_h))
+        for i, label in enumerate(self.HOME_MENU):
+            y   = view_top + i * row_h - shift
+            if y + row_h < view_top or y > self.HEIGHT:
+                continue
+            sel = i == home_index
+            fg  = WHITE if sel else BLACK
             if sel:
                 pygame.draw.rect(self._surface, BLACK, (0, y, self.WIDTH, row_h))
 
-            # Row number: textSize 3 (was 2, scaled with label to keep 1:2 ratio)
-            num_y = y + (row_h - 3*8) // 2 + 12
-            self._text(num, pad_left, num_y, 3, fg)
+            # Label — textSize 6, bold, centered (icons are a separate task)
+            label_font = _get_font(6 * 8, bold=True)
+            label_w    = label_font.size(label)[0]
+            label_x    = (self.WIDTH - label_w) // 2
+            label_y    = y + (row_h - 6 * 8) // 2
+            self._text(label, label_x, label_y, 6, fg, bold=True)
 
-            # App label: textSize 6, bold (was 4)
-            label_y = y + (row_h - 6*8) // 2
-            self._text(label, pad_left + num_w + gap, label_y, 6, fg, bold=True)
-            self._text(label, pad_left + num_w + gap + 1, label_y, 6, fg, bold=True)
-
-            # Unread badge on TEXT row
-            if i == 0 and unread > 0:
-                badge = str(min(unread, 9))
-                badge_x = self.WIDTH - 50
-                badge_y = y + (row_h - 24) // 2
-                badge_col = WHITE if sel else BLACK
-                txt_col   = BLACK if sel else WHITE
-                pygame.draw.rect(self._surface, badge_col, (badge_x, badge_y, 28, 24))
-                self._text(badge, badge_x + 6, badge_y + 4, 2, txt_col)
+            # Unread count hangs to the right of the TEXT row's content
+            if label == 'TEXT' and unread > 0:
+                count_x = label_x + label_w + 24
+                self._text(str(unread), count_x, label_y + (6 * 8 - 3 * 8) // 2, 3, fg)
 
             self._line(y + row_h, weight=1)
+        self._surface.set_clip(prev_clip)
+
+        # "More below" chevron — three shrinking bars, bottom right
+        if n > 4 and home_index <= 3:
+            cx = self.WIDTH - 12
+            cy = self.HEIGHT - 6
+            for w in (14, 8, 3):
+                pygame.draw.rect(self._surface, BLACK, (cx - w, cy - 3, w, 3))
+                cy -= 5
+
+    HOME_MENU = ['TEXT', 'CALL', 'READ', 'LISTEN', 'CONTACTS']
+
+    def _draw_status_group(self, fg, bg, mid_y):
+        """Battery block + percentage + 4-bar signal staircase, right-aligned
+        in the home header. No real telemetry exists yet — fixed placeholder
+        values, swappable for real readings later."""
+        batt_pct = 82
+        pct_str  = f'{batt_pct}%'
+        pct_w    = len(pct_str) * self._char_w(3)
+        sig_heights = [5, 9, 13, 17]
+        sig_w    = 4
+        sig_gap  = 3
+        sig_group_w = sig_w * 4 + sig_gap * 3
+
+        batt_w, batt_h, batt_border = 34, 18, 2
+        nub_w, nub_h = 3, 8
+
+        total_w = batt_w + 2 + nub_w + 14 + pct_w + 14 + sig_group_w
+        x = self.WIDTH - 24 - total_w
+
+        # Battery block
+        by = mid_y - batt_h // 2
+        pygame.draw.rect(self._surface, fg, (x, by, batt_w, batt_h), batt_border)
+        fill_w = int((batt_w - 2 * batt_border) * (batt_pct / 100))
+        pygame.draw.rect(self._surface, fg, (x + batt_border, by + batt_border, fill_w, batt_h - 2 * batt_border))
+        x += batt_w + 2
+        pygame.draw.rect(self._surface, fg, (x, mid_y - nub_h // 2, nub_w, nub_h))
+        x += nub_w + 14
+
+        # Percentage
+        self._text(pct_str, x, mid_y - 3 * 8 // 2, 3, fg)
+        x += pct_w + 14
+
+        # Signal staircase — last bar is an outline only
+        sig_bottom = mid_y + sig_heights[-1] // 2
+        for i, h in enumerate(sig_heights):
+            rect = (x, sig_bottom - h, sig_w, h)
+            if i == len(sig_heights) - 1:
+                pygame.draw.rect(self._surface, fg, rect, 1)
+            else:
+                pygame.draw.rect(self._surface, fg, rect)
+            x += sig_w + sig_gap
+
+    def _draw_header_bar(self, title, back_active, plus_active, height=44, rule_weight=1):
+        """Shared back/title/+ header used by list screens — each control is
+        a literal 38x34 hit box that inverts when selected."""
+        self._line(height - 1, weight=rule_weight)
+        box_w, box_h = 38, 34
+
+        def _btn(char, x, active):
+            if active:
+                pygame.draw.rect(self._surface, BLACK, (x, 6, box_w, box_h))
+                fg = WHITE
+            else:
+                fg = BLACK
+            cw = self._char_w(3)
+            self._text(char, x + (box_w - cw) // 2, 6 + (box_h - 3 * 8) // 2, 3, fg, bold=True)
+
+        _btn('<', 16, back_active)
+        title_w = len(title) * self._char_w(3)
+        self._text(title, (self.WIDTH - title_w) // 2, 10, 3, bold=True)
+        _btn('+', self.WIDTH - 16 - box_w, plus_active)
 
     def _draw_texts(self, data):
-        # data = "idx|name·preview·unread|..."
+        # data = "idx|name·preview·unread·time|..."
         # idx: -1=back, -2=plus, >=0=row
         parts = data.split('|')
         try:
@@ -290,27 +369,11 @@ class Simulator:
             idx     = 0
             entries = parts
 
-        header_h = 44
-        self._line(header_h - 1)
-
-        def _header_btn(char, x, active=False):
-            cw = self._char_w(3)
-            ch = 3 * 8
-            if active:
-                pygame.draw.rect(self._surface, BLACK, (x - 4, 6, cw + 8, ch + 8))
-                self._text(char, x, 10, 3, WHITE)
-            else:
-                self._text(char, x, 10, 3, BLACK)
-
-        _header_btn('<', 16, active=(idx == -1))
-        title   = 'TEXT'
-        title_w = len(title) * self._char_w(3)
-        self._text(title, (self.WIDTH - title_w) // 2, 10, 3, bold=True)
-        _header_btn('+', self.WIDTH - 16 - self._char_w(3), active=(idx == -2))
+        self._draw_header_bar('TEXT', idx == -1, idx == -2)
 
         row_h  = 88
         margin = 28
-        y      = header_h
+        y      = 44
 
         for i, entry in enumerate(entries):
             if y + row_h > self.HEIGHT:
@@ -319,158 +382,510 @@ class Simulator:
             name    = fields[0] if len(fields) > 0 else ''
             preview = fields[1] if len(fields) > 1 else ''
             unread  = fields[2] == '1' if len(fields) > 2 else False
+            time_str = fields[3] if len(fields) > 3 else ''
 
             sel = i == idx
             fg  = WHITE if sel else BLACK
             if sel:
                 pygame.draw.rect(self._surface, BLACK, (0, y, self.WIDTH, row_h))
 
-            # Name (bold if unread)
+            # Name (left) — bold if unread
             self._text(name, margin, y + 10, 3, fg, bold=unread)
             if unread:
                 self._text(name, margin + 1, y + 10, 3, fg, bold=True)
 
-            # Chevron
+            # Time + chevron (right), baseline-aligned with the name
             chevron_x = self.WIDTH - margin - self._char_w(2)
-            self._text('>', chevron_x, y + (row_h - 16) // 2, 2, fg)
+            self._text('>', chevron_x, y + 14, 2, fg)
+            if time_str:
+                time_w = len(time_str) * self._char_w(2)
+                self._text(time_str, chevron_x - time_w - 10, y + 14, 2, fg)
 
             # Preview
             preview_str = preview[:44]
-            self._text(preview_str, margin, y + 52, 2, fg)
+            self._text(preview_str, margin, y + 48, 2, fg)
 
             self._line(y + row_h - 1)
             y += row_h
 
     def _draw_thread2(self, data):
-        # data = "name|draft|hdr|Y:body|R:body|..."  hdr: ''=typing 'B'=back 'I'=info
+        # data = "name|draft|hdr|Y:time~body|R:time~body|..."  hdr: ''=typing 'B'=back 'I'=info
         parts = data.split('|')
         name  = parts[0] if parts else ''
         draft = parts[1] if len(parts) > 1 else ''
         hdr   = parts[2] if len(parts) > 2 else ''
         msgs  = parts[3:] if len(parts) > 3 else []
 
-        # Header
+        box_w, box_h = 38, 34
         back_sel = hdr == 'B'
         info_sel = hdr == 'I'
 
         if back_sel:
-            pygame.draw.rect(self._surface, BLACK, (0, 0, 60, 46))
-        self._text('<', 16, 10, 3, WHITE if back_sel else BLACK)
-
+            pygame.draw.rect(self._surface, BLACK, (16, 6, box_w, box_h))
+        self._text('<', 16 + (box_w - self._char_w(3)) // 2, 6 + (box_h - 24) // 2, 3,
+                    WHITE if back_sel else BLACK, bold=True)
         self._text_centered(name, 10, 3, bold=True)
-
+        info_x = self.WIDTH - 16 - box_w
         if info_sel:
-            pygame.draw.rect(self._surface, BLACK, (self.WIDTH - 60, 0, 60, 46))
-        self._text('i', self.WIDTH - 16 - self._char_w(3), 10, 3, WHITE if info_sel else BLACK)
+            pygame.draw.rect(self._surface, BLACK, (info_x, 6, box_w, box_h))
+        self._text('i', info_x + (box_w - self._char_w(3)) // 2, 6 + (box_h - 24) // 2, 3,
+                    WHITE if info_sel else BLACK, bold=True)
+        self._line(46, weight=2)
 
-        self._line(46)
-
-        # Reply bar pinned at bottom
-        reply_y   = 555
+        # Composer — pinned to the bottom 45px
+        composer_h = 45
+        reply_y    = self.HEIGHT - composer_h
         self._line(reply_y, weight=2)
-        prompt    = '> '
-        prompt_w  = len(prompt) * self._char_w(3)
-        reply_x   = 24
-        self._text(prompt, reply_x, reply_y + 9, 3)
-        draft_x   = reply_x + prompt_w
-        self._text(draft, draft_x, reply_y + 9, 3)
-        # Cursor block
-        cursor_x  = draft_x + len(draft) * self._char_w(3)
-        pygame.draw.rect(self._surface, BLACK, (cursor_x, reply_y + 9, self._char_w(3), 24))
+        prompt   = '> '
+        field_y  = reply_y + (composer_h - 24) // 2
+        self._text(prompt, 24, field_y, 3)
+        draft_x  = 24 + len(prompt) * self._char_w(3)
+        self._text(draft, draft_x, field_y, 3)
+        cursor_x = draft_x + len(draft) * self._char_w(3)
+        pygame.draw.rect(self._surface, BLACK, (cursor_x, field_y, self._char_w(3), 24))
 
-        # Messages (AIM style)
-        y        = 56
-        ts       = 3
-        line_h   = 32
-        margin   = 16
-        max_w    = self.WIDTH - margin
-        last_time = None
-
-        for msg in msgs:
-            if y >= reply_y - line_h:
-                break
-
-            if len(msg) >= 2 and msg[1] == ':':
-                align = msg[0]
-                rest  = msg[2:]
+        # Messages — 2px-bordered bubbles stacked from the bottom. Incoming
+        # left/paper with a stepped pixel tail and the sender's name above
+        # each incoming run; outgoing right/filled ink. Time sits under
+        # every bubble.
+        parsed = []
+        for m in msgs:
+            if len(m) >= 2 and m[1] == ':':
+                align, rest = m[0], m[2:]
             else:
-                align, rest = 'R', msg
-
+                align, rest = 'R', m
             if '~' in rest:
                 time_str, body = rest.split('~', 1)
             else:
                 time_str, body = '', rest
+            parsed.append((align, time_str, body))
 
-            if time_str and time_str != last_time:
-                last_time = time_str
-                self._text_centered(time_str, y, 1)
-                y += ts * 8 + 10
+        pad_x, pad_y   = 12, 8
+        bubble_line_h  = 35   # 24px text at line-height 1.45
+        max_bubble_w   = 400
+        inner_w        = max_bubble_w - 2 * pad_x
+        margin         = 16
+        tail_widths    = [4, 8, 14, 8, 4]
+        tail_seg_h     = 4
+        tail_span      = max(tail_widths) + 2
+        gap            = 16
+        top, bottom    = 62, self.HEIGHT - 62
 
-            sender_label = 'Me' if align == 'Y' else name
-            prefix       = f"{sender_label}:"
-            font_bold    = _get_font(ts * 8, bold=True)
-            prefix_w     = font_bold.size(prefix + ' ')[0]
-            wrap_w       = max_w - prefix_w
+        blocks, prev_align = [], None
+        for align, time_str, body in parsed:
+            lines     = self._wrap_lines(body, 3, inner_w)
+            show_name = align != 'Y' and prev_align != align
+            bubble_h  = pad_y * 2 + len(lines) * bubble_line_h
+            h = bubble_h + 8 * 2 + 4
+            if show_name:
+                h += 8 * 2 + 6
+            blocks.append({'align': align, 'time': time_str, 'lines': lines,
+                            'show_name': show_name, 'bubble_h': bubble_h, 'h': h})
+            prev_align = align
 
-            lines = self._wrap_lines(body, ts, wrap_w)
-            for i, line in enumerate(lines):
-                if y >= reply_y - line_h:
-                    break
-                if i == 0:
-                    self._surface.blit(font_bold.render(prefix, True, BLACK), (margin, y))
-                    self._text(line, margin + prefix_w, y, ts)
-                else:
-                    self._text(line, margin + prefix_w, y, ts)
-                y += line_h
-            y += 4
+        # Keep the newest blocks that fit the message region, bottom-up.
+        fitted, used = [], 0
+        for b in reversed(blocks):
+            extra = b['h'] + (gap if fitted else 0)
+            if used + extra > bottom - top:
+                break
+            used += extra
+            fitted.insert(0, b)
+
+        y = bottom - used
+        for b in fitted:
+            block_top = y
+            y0 = y
+            if b['show_name']:
+                self._text(name.upper(), margin + tail_span, y0, 2, bold=True)
+                y0 += 8 * 2 + 6
+
+            line_w = max((len(l) for l in b['lines']), default=0) * self._char_w(3)
+            bw = min(max_bubble_w, line_w + 2 * pad_x)
+            outgoing = b['align'] == 'Y'
+            bx = (self.WIDTH - margin - bw) if outgoing else (margin + tail_span)
+
+            fill    = BLACK if outgoing else WHITE
+            text_fg = WHITE if outgoing else BLACK
+            pygame.draw.rect(self._surface, fill, (bx, y0, bw, b['bubble_h']))
+            pygame.draw.rect(self._surface, BLACK, (bx, y0, bw, b['bubble_h']), 2)
+            ly = y0 + pad_y
+            for line in b['lines']:
+                self._text(line, bx + pad_x, ly, 3, text_fg)
+                ly += bubble_line_h
+
+            tail_total_h = tail_seg_h * len(tail_widths)
+            tail_y       = y0 + (b['bubble_h'] - tail_total_h) // 2
+            for i, w in enumerate(tail_widths):
+                tx = (bx + bw + 2) if outgoing else (bx - 2 - w)
+                pygame.draw.rect(self._surface, BLACK, (tx, tail_y + i * tail_seg_h, w, tail_seg_h))
+
+            time_y = y0 + b['bubble_h'] + 6
+            time_w = len(b['time']) * self._char_w(2)
+            time_x = (bx + bw - time_w) if outgoing else bx
+            self._text(b['time'], time_x, time_y, 2)
+
+            y = block_top + b['h'] + gap
+
+    def _draw_field_label(self, text, x, y, active):
+        """A field label that inverts (fills ink, text flips to paper) while
+        its field is active — the mode is marked at the field, not just by
+        cursor position."""
+        w = len(text) * self._char_w(2) + 4
+        h = 8 * 2 + 4
+        if active:
+            pygame.draw.rect(self._surface, BLACK, (x - 2, y - 2, w, h))
+        self._text(text, x, y, 2, WHITE if active else BLACK)
 
     def _draw_compose(self, data):
-        # data = "compose_to|compose_msg|to_active|hdr"  hdr: ''=typing 'X'=exit selected
+        # data = "to|msg|to_active|hdr|plus_sel|send_sel"  hdr: ''=typing 'X'=exit
         parts     = data.split('|')
         to_str    = parts[0] if len(parts) > 0 else ''
         msg_str   = parts[1] if len(parts) > 1 else ''
         to_active = parts[2] != '0' if len(parts) > 2 else True
         x_sel     = parts[3] == 'X' if len(parts) > 3 else False
+        plus_sel  = parts[4] == '1' if len(parts) > 4 else False
+        send_sel  = parts[5] == '1' if len(parts) > 5 else False
+
+        box_w, box_h = 38, 34
 
         # Header
         self._text('NEW MESSAGE', 24, 10, 3, bold=True)
+        self._text('NEW MESSAGE', 25, 10, 3, bold=True)
+        x_box = (self.WIDTH - 16 - box_w, 8)
         if x_sel:
-            pygame.draw.rect(self._surface, BLACK, (self.WIDTH - 60, 0, 60, 44))
-        self._text('X', self.WIDTH - 16 - self._char_w(3), 8, 3, WHITE if x_sel else BLACK)
+            pygame.draw.rect(self._surface, BLACK, (*x_box, box_w, box_h))
+        self._text('X', x_box[0] + (box_w - self._char_w(3)) // 2, x_box[1] + (box_h - 24) // 2, 3,
+                    WHITE if x_sel else BLACK, bold=True)
         self._line(44, weight=2)
+
+        # TO: field — label inverts while active; empty+active shows a '+'
+        # hint on the right that opens the contact picker
+        self._draw_field_label('TO:', 24, 58, to_active)
+        self._text(to_str, 24, 84, 3)
+        if to_active and not to_str:
+            plus_box = (self.WIDTH - 24 - box_w, 79)
+            if plus_sel:
+                pygame.draw.rect(self._surface, BLACK, (*plus_box, box_w, box_h))
+            self._text('+', plus_box[0] + (box_w - self._char_w(3)) // 2, plus_box[1] + (box_h - 24) // 2,
+                        3, WHITE if plus_sel else BLACK, bold=True)
+        elif to_active and not plus_sel:
+            cursor_x = 24 + len(to_str) * self._char_w(3)
+            pygame.draw.rect(self._surface, BLACK, (cursor_x, 84, self._char_w(3), 24))
+        self._line(122)
+
+        # MESSAGE: field — label inverts while active
+        self._draw_field_label('MESSAGE:', 24, 134, not to_active)
+        msg_active = not to_active and not send_sel
+        lines  = self._wrap_lines(msg_str, 3, self.WIDTH - 48) if msg_str else ['']
+        msg_y  = 162
+        line_h = 34
+        for line in lines:
+            self._text(line, 24, msg_y, 3)
+            msg_y += line_h
+        if msg_active:
+            last_line = lines[-1] if lines else ''
+            cursor_x  = 24 + len(last_line) * self._char_w(3)
+            cursor_y  = msg_y - line_h
+            pygame.draw.rect(self._surface, BLACK, (cursor_x, cursor_y, 12, 16))
 
         # SEND — bottom right; activates the same as Enter on a filled-out message
-        self._text('SEND', self.WIDTH - 24 - 4 * self._char_w(2), 570, 2)
+        send_str = 'SEND'
+        send_w   = len(send_str) * self._char_w(2) + 36
+        send_x   = self.WIDTH - 24 - send_w
+        send_y   = self.HEIGHT - 14 - (16 + 12)
+        if send_sel:
+            pygame.draw.rect(self._surface, BLACK, (send_x, send_y, send_w, 16 + 12))
+        pygame.draw.rect(self._surface, BLACK, (send_x, send_y, send_w, 16 + 12), 3)
+        self._text(send_str, send_x + 18, send_y + 6, 2, WHITE if send_sel else BLACK, bold=True)
 
-        # TO: field
-        self._text('TO:', 24, 58, 1)
-        self._text(to_str, 24, 72, 3)
-        if to_active:
-            cursor_x = 24 + len(to_str) * self._char_w(3)
-            pygame.draw.rect(self._surface, BLACK, (cursor_x, 72, self._char_w(3), 24))
-        self._line(100)
-
-        # MESSAGE: field
-        self._text('MESSAGE:', 24, 114, 1)
-        # Wrap message text
-        lines  = self._wrap_lines(msg_str, 2, self.WIDTH - 48) if msg_str else ['']
-        msg_y  = 128
-        line_h = 20
-        for i, line in enumerate(lines):
-            self._text(line, 24, msg_y + i * line_h, 2)
-        if not to_active:
-            last_line = lines[-1] if lines else ''
-            cursor_x  = 24 + len(last_line) * self._char_w(2)
-            cursor_y  = msg_y + (len(lines) - 1) * line_h
-            pygame.draw.rect(self._surface, BLACK, (cursor_x, cursor_y, self._char_w(2), 16))
+    def _draw_alert_icon_body(self, top, body):
+        """Boxed '!' + prose paragraph — the alert pattern used by stub
+        screens and the discard confirmation: what happened, why, what to
+        do instead, all in one paragraph."""
+        icon_size = 46
+        icon_x    = 56
+        pygame.draw.rect(self._surface, BLACK, (icon_x, top, icon_size, icon_size), 2)
+        self._text('!', icon_x + (icon_size - self._char_w(3)) // 2,
+                    top + (icon_size - 24) // 2, 3, bold=True)
+        text_x  = icon_x + icon_size + 22
+        max_px  = self.WIDTH - 56 - text_x
+        lines   = self._wrap_lines(body, 3, max_px)
+        ly = top
+        for line in lines:
+            self._text(line, text_x, ly, 3)
+            ly += 34
 
     def _draw_stub(self, data):
-        # data = "app_name"
-        name = data.strip()
-        self._text(name, 24, 10, 3, bold=True)
+        # data = "title|body"
+        parts = data.split('|', 1)
+        title = parts[0] if len(parts) > 0 else ''
+        body  = parts[1] if len(parts) > 1 else ''
+        self._text(title, 24, 10, 3, bold=True)
         self._line(44, weight=2)
-        msg = f"{name} — COMING SOON"
-        self._text_centered(msg, 280, 2)
+        self._draw_alert_icon_body(212, body)
+
+        label = 'OK'
+        w, h  = len(label) * self._char_w(2) + 36, 16 + 12
+        x, y  = self.WIDTH - 24 - w, self.HEIGHT - 24 - h
+        pygame.draw.rect(self._surface, BLACK, (x, y, w, h), 3)
+        self._text(label, x + 18, y + 6, 2, bold=True)
+
+    def _draw_confirm_discard(self, data):
+        discard_sel = data.strip() == 'D'
+        self._text('NEW MESSAGE', 24, 10, 3, bold=True)
+        self._line(44, weight=2)
+        body = ("DISCARD THIS MESSAGE? IT HAS NOT BEEN SENT, AND THE PHONE KEEPS "
+                "NO DRAFTS, SO THE TEXT CANNOT BE BROUGHT BACK.")
+        self._draw_alert_icon_body(196, body)
+
+        d_label, d_h = 'DISCARD', 16 + 14
+        d_w = len(d_label) * self._char_w(2) + 36
+        d_x, d_y = 56, self.HEIGHT - 24 - d_h
+        if discard_sel:
+            pygame.draw.rect(self._surface, BLACK, (d_x, d_y, d_w, d_h))
+        pygame.draw.rect(self._surface, BLACK, (d_x, d_y, d_w, d_h), 2)
+        self._text(d_label, d_x + 18, d_y + 7, 2, WHITE if discard_sel else BLACK)
+
+        k_label, k_h = 'KEEP EDITING', 16 + 12
+        k_w = len(k_label) * self._char_w(2) + 36
+        k_x, k_y = self.WIDTH - 24 - k_w, self.HEIGHT - 24 - k_h
+        if not discard_sel:
+            pygame.draw.rect(self._surface, BLACK, (k_x, k_y, k_w, k_h))
+        pygame.draw.rect(self._surface, BLACK, (k_x, k_y, k_w, k_h), 3)
+        self._text(k_label, k_x + 18, k_y + 6, 2, WHITE if not discard_sel else BLACK, bold=True)
+
+    def _draw_contacts_pick(self, data):
+        # data = "idx|query|name·number|..."  idx: -1=back, -2=plus, >=0=row
+        parts = data.split('|')
+        try:
+            idx = int(parts[0])
+        except (ValueError, IndexError):
+            idx = 0
+        query   = parts[1] if len(parts) > 1 else ''
+        entries = parts[2:] if len(parts) > 2 else []
+
+        self._draw_header_bar('CONTACTS', idx == -1, idx == -2)
+
+        row_h, bar_h = 64, 45
+        y = 44
+        for i, entry in enumerate(entries):
+            if y + row_h > self.HEIGHT - bar_h:
+                break
+            fields = entry.split('\xb7')
+            name   = fields[0] if len(fields) > 0 else ''
+            number = fields[1] if len(fields) > 1 else ''
+            sel    = i == idx
+            fg     = WHITE if sel else BLACK
+            if sel:
+                pygame.draw.rect(self._surface, BLACK, (0, y, self.WIDTH, row_h))
+            self._text(name, 28, y + (row_h - 24) // 2, 3, fg, bold=True)
+            num_w = len(number) * self._char_w(2)
+            self._text(number, self.WIDTH - 28 - num_w, y + (row_h - 16) // 2, 2, fg)
+            self._line(y + row_h - 1)
+            y += row_h
+
+        bar_y = self.HEIGHT - bar_h
+        self._line(bar_y, weight=2)
+        label = 'LOOK UP:'
+        self._text(label, 28, bar_y + (bar_h - 16) // 2, 2)
+        qx = 28 + len(label) * self._char_w(2) + 14
+        self._text(query, qx, bar_y + (bar_h - 24) // 2, 3)
+        cursor_x = qx + len(query) * self._char_w(3)
+        pygame.draw.rect(self._surface, BLACK, (cursor_x, bar_y + (bar_h - 24) // 2, self._char_w(3), 24))
+
+    def _draw_contact(self, data):
+        # data = "name|number|sel"  sel: B=back C=call T=text E=edit
+        parts  = data.split('|')
+        name   = parts[0] if len(parts) > 0 else ''
+        number = parts[1] if len(parts) > 1 else 'NO NUMBER SAVED'
+        sel    = parts[2] if len(parts) > 2 else 'C'
+        box_w, box_h = 38, 34
+
+        back_sel = sel == 'B'
+        if back_sel:
+            pygame.draw.rect(self._surface, BLACK, (16, 6, box_w, box_h))
+        self._text('<', 16 + (box_w - self._char_w(3)) // 2, 6 + (box_h - 24) // 2, 3,
+                    WHITE if back_sel else BLACK, bold=True)
+        self._text_centered('CONTACT', 10, 3, bold=True)
+
+        edit_sel = sel == 'E'
+        edit_label = 'EDIT'
+        edit_w, edit_h = len(edit_label) * self._char_w(2) + 20, 34
+        edit_x = self.WIDTH - 16 - edit_w
+        if edit_sel:
+            pygame.draw.rect(self._surface, BLACK, (edit_x, 6, edit_w, edit_h))
+        self._text(edit_label, edit_x + 10, 6 + (edit_h - 16) // 2, 2, WHITE if edit_sel else BLACK, bold=True)
+        self._line(43)
+
+        self._text(name, 28, 150, 6, bold=True)
+        self._text(number, 28, 150 + 48 + 18, 3)
+        self._line(330)
+
+        call_sel, text_sel = sel == 'C', sel == 'T'
+        btn_y, btn_h = 360, 24 + 16
+        call_label = 'CALL'
+        call_w = len(call_label) * self._char_w(3) + 44
+        if call_sel:
+            pygame.draw.rect(self._surface, BLACK, (28, btn_y, call_w, btn_h))
+        pygame.draw.rect(self._surface, BLACK, (28, btn_y, call_w, btn_h), 3)
+        self._text(call_label, 28 + 22, btn_y + 8, 3, WHITE if call_sel else BLACK, bold=True)
+
+        text_x = 28 + call_w + 16
+        text_label = 'TEXT'
+        text_w = len(text_label) * self._char_w(3) + 44
+        if text_sel:
+            pygame.draw.rect(self._surface, BLACK, (text_x, btn_y, text_w, btn_h))
+        pygame.draw.rect(self._surface, BLACK, (text_x, btn_y, text_w, btn_h), 3)
+        self._text(text_label, text_x + 22, btn_y + 8, 3, WHITE if text_sel else BLACK, bold=True)
+
+    def _draw_contact_edit(self, data):
+        # data = "first|last|number|idx"  idx: -1=cancel, 0/1/2=field, 3=save
+        parts = data.split('|')
+        first  = parts[0] if len(parts) > 0 else ''
+        last   = parts[1] if len(parts) > 1 else ''
+        number = parts[2] if len(parts) > 2 else ''
+        try:
+            idx = int(parts[3]) if len(parts) > 3 else 0
+        except ValueError:
+            idx = 0
+        box_w, box_h = 38, 34
+
+        cancel_sel = idx == -1
+        if cancel_sel:
+            pygame.draw.rect(self._surface, BLACK, (16, 6, box_w, box_h))
+        self._text('X', 16 + (box_w - self._char_w(3)) // 2, 6 + (box_h - 24) // 2, 3,
+                    WHITE if cancel_sel else BLACK, bold=True)
+        self._text_centered('EDIT CONTACT', 10, 3, bold=True)
+        self._line(43)
+
+        def _field(label, value, y_label, y_value, y_rule, active):
+            self._draw_field_label(label, 24, y_label, active)
+            self._text(value, 24, y_value, 3)
+            if active:
+                cx = 24 + len(value) * self._char_w(3)
+                pygame.draw.rect(self._surface, BLACK, (cx, y_value, self._char_w(3), 24))
+            self._line(y_rule)
+
+        _field('FIRST NAME:', first, 70, 100, 138, idx == 0)
+        _field('LAST NAME:', last, 158, 188, 226, idx == 1)
+        _field('PHONE NUMBER:', number, 246, 276, 314, idx == 2)
+
+        save_sel = idx == 3
+        label = 'SAVE'
+        w, h  = len(label) * self._char_w(2) + 36, 16 + 12
+        x, y  = self.WIDTH - 24 - w, self.HEIGHT - 14 - h
+        if save_sel:
+            pygame.draw.rect(self._surface, BLACK, (x, y, w, h))
+        pygame.draw.rect(self._surface, BLACK, (x, y, w, h), 3)
+        self._text(label, x + 18, y + 6, 2, WHITE if save_sel else BLACK, bold=True)
+
+    def _draw_calls(self, data):
+        # data = "idx|name·tag·time·duration|..."  idx: -1=back, 0=DIAL A NUMBER, 1+=log
+        parts = data.split('|')
+        try:
+            idx = int(parts[0])
+        except (ValueError, IndexError):
+            idx = 0
+        entries = parts[1:] if len(parts) > 1 else []
+
+        self._draw_header_bar_back_only('CALL', idx == -1)
+
+        row_h = 76
+        y = 44
+        sel = idx == 0
+        fg  = WHITE if sel else BLACK
+        if sel:
+            pygame.draw.rect(self._surface, BLACK, (0, y, self.WIDTH, row_h))
+        self._text('DIAL A NUMBER', 28, y + (row_h - 24) // 2, 3, fg, bold=True)
+        self._line(y + row_h - 1)
+        y += row_h
+
+        for i, entry in enumerate(entries):
+            if y + row_h > self.HEIGHT:
+                break
+            fields = entry.split('\xb7')
+            name = fields[0] if len(fields) > 0 else ''
+            tag  = fields[1] if len(fields) > 1 else ''
+            t    = fields[2] if len(fields) > 2 else ''
+            dur  = fields[3] if len(fields) > 3 else ''
+            sel  = (i + 1) == idx
+            fg   = WHITE if sel else BLACK
+            if sel:
+                pygame.draw.rect(self._surface, BLACK, (0, y, self.WIDTH, row_h))
+            self._text(name, 28, y + (row_h - 24) // 2, 3, fg, bold=True)
+            tag_x = 28 + len(name) * self._char_w(3) + 12
+            tag_w = len(tag) * self._char_w(2) + 12
+            pygame.draw.rect(self._surface, fg, (tag_x, y + (row_h - 16) // 2, tag_w, 16), 1)
+            self._text(tag, tag_x + 6, y + (row_h - 16) // 2, 2, fg)
+            t_w = len(t) * self._char_w(2)
+            self._text(t, self.WIDTH - 28 - t_w, y + (row_h - 38) // 2, 2, fg)
+            dur_w = len(dur) * self._char_w(2)
+            self._text(dur, self.WIDTH - 28 - dur_w, y + (row_h - 38) // 2 + 22, 2, fg)
+            self._line(y + row_h - 1)
+            y += row_h
+
+    def _draw_header_bar_back_only(self, title, back_active, height=44):
+        """Header with only a back control — used by CALL, whose right side
+        carries no additive action."""
+        self._line(height - 1)
+        box_w, box_h = 38, 34
+        if back_active:
+            pygame.draw.rect(self._surface, BLACK, (16, 6, box_w, box_h))
+        self._text('<', 16 + (box_w - self._char_w(3)) // 2, 6 + (box_h - 24) // 2, 3,
+                    WHITE if back_active else BLACK, bold=True)
+        title_w = len(title) * self._char_w(3)
+        self._text(title, (self.WIDTH - title_w) // 2, 10, 3, bold=True)
+
+    def _draw_dial(self, data):
+        # data = "buffer|quick_idx|name|..."
+        parts = data.split('|')
+        buf  = parts[0] if len(parts) > 0 else ''
+        try:
+            qidx = int(parts[1]) if len(parts) > 1 else -1
+        except ValueError:
+            qidx = -1
+        names = parts[2:] if len(parts) > 2 else []
+
+        self._text_centered('DIAL', 40, 2)
+        buf_w, cursor_w = len(buf) * self._char_w(6), 28
+        x = (self.WIDTH - buf_w - cursor_w) // 2
+        self._text(buf, x, 70, 6, bold=True)
+        pygame.draw.rect(self._surface, BLACK, (x + buf_w, 70, cursor_w, 48))
+        self._line(170, weight=2)
+        self._text('RECENT', 28, 186, 2)
+
+        row_h = 56
+        y = 210
+        for i, name in enumerate(names):
+            sel = i == qidx
+            fg  = WHITE if sel else BLACK
+            if sel:
+                pygame.draw.rect(self._surface, BLACK, (28, y, self.WIDTH - 56, row_h))
+            self._text(name, 32, y + (row_h - 24) // 2, 3, fg, bold=True)
+            pygame.draw.line(self._surface, BLACK, (28, y + row_h - 1), (self.WIDTH - 28, y + row_h - 1), 1)
+            y += row_h
+
+    def _draw_call_state(self, data):
+        # data = "OUT|IN|ACTIVE|name|timer"
+        parts = data.split('|')
+        call_state = parts[0] if len(parts) > 0 else 'OUT'
+        name  = parts[1] if len(parts) > 1 else ''
+        timer = parts[2] if len(parts) > 2 else '00:00'
+
+        if call_state == 'IN':
+            self._surface.fill(BLACK)
+            fg, label, hint = WHITE, 'INCOMING CALL', 'ENTER ACCEPT \xb7 ESC DECLINE'
+        elif call_state == 'ACTIVE':
+            fg, label, hint = BLACK, 'IN CALL', 'ESC HANG UP'
+        else:
+            fg, label, hint = BLACK, 'CALLING…', 'ESC HANG UP'
+
+        self._text_centered(label, 220, 2, color=fg)
+        self._text_centered(name, 280, 6, color=fg, bold=True)
+        if call_state == 'ACTIVE':
+            self._text_centered(timer, 360, 3, color=fg)
+        self._text_centered(hint, self.HEIGHT - 34 - 16, 2, color=fg)
 
     # ── OS 0.0 Legacy Renderers (kept for kyphone_app.py) ────────────
 
