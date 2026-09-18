@@ -29,6 +29,7 @@ spi_bridge/kyphone_app.py
 # YouTube talk props — standalone Inkplate sketches, not part of the phone
 spi_bridge/Inkplate_Prop_Blank/
 spi_bridge/Inkplate_Prop_Title/
+spi_bridge/Inkplate_Prop_Demo/
 
 # Local and Agent Files
 .gemini/
